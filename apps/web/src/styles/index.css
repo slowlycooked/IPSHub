@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(180deg, #f7faff 0%, #f4f7fb 100%);
+  color: #0f172a;
+}
+
+code {
+  font-family: 'IBM Plex Mono', Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+:root {
+  --primary: #0c5cab;
+  --primary-2: #0a4a8a;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --surface-0: #f4f7fb;
+  --surface-1: rgba(255, 255, 255, 0.84);
+  --surface-2: #ffffff;
+  --border-soft: rgba(148, 163, 184, 0.28);
+  --text-1: #0f172a;
+  --text-2: #475569;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer components {
+  .ip-panel {
+    @apply rounded-md border;
+    background: var(--surface-1);
+    border-color: var(--border-soft);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  }
+
+  .ip-panel-solid {
+    @apply rounded-md border;
+    background: var(--surface-2);
+    border-color: var(--border-soft);
+  }
+
+  .ip-input {
+    @apply w-full rounded-md border px-3 py-2 text-sm outline-none transition;
+    background: #ffffff;
+    border-color: #cbd5e1;
+    color: var(--text-1);
+  }
+
+  .ip-input::placeholder {
+    color: #94a3b8;
+  }
+
+  .ip-input:focus {
+    border-color: rgba(12, 92, 171, 0.9);
+    box-shadow: 0 0 0 3px rgba(12, 92, 171, 0.16);
+  }
+
+  .ip-btn-primary {
+    @apply rounded-md px-4 py-2 text-sm font-semibold text-white transition;
+    background: var(--primary);
+  }
+
+  .ip-btn-primary:hover {
+    background: var(--primary-2);
+  }
+
+  .ip-btn-secondary {
+    @apply rounded-md border px-4 py-2 text-sm font-medium transition;
+    background: #ffffff;
+    border-color: #cbd5e1;
+    color: #0f172a;
+  }
+
+  .ip-btn-secondary:hover {
+    background: #f8fafc;
+  }
+
+  .ip-badge {
+    @apply inline-flex items-center rounded-sm border px-2 py-0.5 text-xs font-medium;
+  }
+}

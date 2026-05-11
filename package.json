@@ -1,0 +1,32 @@
+{
+  "name": "ipshub",
+  "version": "0.1.0",
+  "description": "IPS/Proxy subscription aggregator and converter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install-all": "pnpm install",
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "format": "pnpm -r format",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.2.0",
+    "@typescript-eslint/parser": "^7.2.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5"
+  },
+  "pnpm": {
+    "overrides": {},
+    "ignoredBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}
