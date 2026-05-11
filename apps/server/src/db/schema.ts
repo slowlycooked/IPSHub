@@ -46,9 +46,9 @@ export const SCHEMA = {
   nodes: `
     CREATE TABLE IF NOT EXISTS nodes (
       id TEXT PRIMARY KEY,
-      fingerprint TEXT UNIQUE NOT NULL,
+      fingerprint TEXT NOT NULL,
       provider_id TEXT NOT NULL,
-      protocol TEXT NOT NULL CHECK (protocol IN ('ss', 'vmess', 'trojan', 'vless', 'socks5', 'http')),
+      protocol TEXT NOT NULL CHECK (protocol IN ('ss', 'vmess', 'trojan', 'vless', 'socks5', 'http', 'hysteria2')),
       name TEXT NOT NULL,
       server TEXT NOT NULL,
       port INTEGER NOT NULL,
@@ -58,11 +58,14 @@ export const SCHEMA = {
       tls TEXT,
       tls_insecure INTEGER DEFAULT 0,
       enabled INTEGER DEFAULT 1,
+      last_seen_at INTEGER,
+      stale INTEGER DEFAULT 0,
       tag TEXT,
       extra_data TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
-      FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+      FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
+      UNIQUE(provider_id, fingerprint)
     );
   `,
 
@@ -92,6 +95,7 @@ export const SCHEMA = {
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL,
       token_hash TEXT UNIQUE NOT NULL,
+      token_encrypted TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
     );
@@ -141,10 +145,11 @@ export const SCHEMA = {
     'CREATE INDEX IF NOT EXISTS idx_providers_user ON providers(user_id);',
     'CREATE INDEX IF NOT EXISTS idx_providers_enabled ON providers(enabled);',
     'CREATE INDEX IF NOT EXISTS idx_profiles_user ON profiles(user_id);',
-    'CREATE INDEX IF NOT EXISTS idx_nodes_fingerprint ON nodes(fingerprint);',
+    'CREATE INDEX IF NOT EXISTS idx_nodes_provider_fingerprint ON nodes(provider_id, fingerprint);',
     'CREATE INDEX IF NOT EXISTS idx_nodes_provider ON nodes(provider_id);',
     'CREATE INDEX IF NOT EXISTS idx_nodes_protocol ON nodes(protocol);',
     'CREATE INDEX IF NOT EXISTS idx_nodes_enabled ON nodes(enabled);',
+    'CREATE INDEX IF NOT EXISTS idx_nodes_stale ON nodes(stale);',
     'CREATE INDEX IF NOT EXISTS idx_profile_tokens_profile ON profile_tokens(profile_id);',
     'CREATE INDEX IF NOT EXISTS idx_refresh_jobs_provider ON refresh_jobs(provider_id);',
     'CREATE INDEX IF NOT EXISTS idx_refresh_jobs_status ON refresh_jobs(status);',

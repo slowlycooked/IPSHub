@@ -28,6 +28,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         FROM nodes n
         JOIN providers p ON p.id = n.provider_id
         WHERE p.user_id = ?
+          AND n.stale = 0
       `).get(userId) as any;
 
       const profileStats = db.prepare(`
@@ -53,9 +54,10 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         latestRefreshAt: providerStats?.latestRefreshAt || undefined,
       };
 
-      const recentRefreshes = db.prepare(`
+      const recentRefreshesRaw = db.prepare(`
         SELECT
           rj.id,
+          rj.provider_id,
           rj.status,
           rj.node_count,
           rj.error_message,
@@ -70,9 +72,22 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         LIMIT 10
       `).all(userId) as any[];
 
-      const recentAccessLogs = db.prepare(`
+      const recentRefreshes = recentRefreshesRaw.map((job: any) => ({
+        id: job.id,
+        providerId: job.provider_id,
+        providerName: job.provider_name,
+        status: job.status,
+        nodeCount: job.node_count,
+        errorMessage: job.error_message,
+        durationMs: job.duration_ms,
+        createdAt: job.created_at,
+        updatedAt: job.updated_at,
+      }));
+
+      const recentAccessLogsRaw = db.prepare(`
         SELECT
           al.id,
+          al.profile_id,
           al.ip_address,
           al.user_agent,
           al.status_code,
@@ -87,6 +102,19 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
         ORDER BY al.accessed_at DESC
         LIMIT 10
       `).all(userId) as any[];
+
+      const recentAccessLogs = recentAccessLogsRaw.map((log: any) => ({
+        id: log.id,
+        profileId: log.profile_id,
+        profileName: log.profile_name,
+        outputFormat: log.output_format,
+        ipAddress: log.ip_address,
+        userAgent: log.user_agent,
+        statusCode: log.status_code,
+        responseSize: log.response_size,
+        durationMs: log.duration_ms,
+        accessedAt: log.accessed_at,
+      }));
 
       const topProfiles = db.prepare(`
         SELECT id, name, access_count, last_accessed_at

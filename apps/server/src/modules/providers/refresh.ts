@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '@/db/client';
 import { fetchSubscription } from '@/core/fetcher/fetchSubscription';
+import { SubscriptionFormat } from '@/core/parsers/detectType';
 import { upsertNodes } from '@/modules/nodes/service';
 import { createLogger } from '@/utils/logger';
 import { getDecryptedSubscriptionUrl, updateProviderStats } from './service';
@@ -14,6 +15,7 @@ type RefreshTrigger = 'manual' | 'scheduled';
 interface ProviderRecord {
   id: string;
   name: string;
+  type: string;
   enabled: number;
   timeout_seconds: number | null;
   user_agent: string | null;
@@ -50,6 +52,22 @@ export function enqueueProviderRefresh(providerId: string, options: RefreshOptio
   });
 
   return { jobId };
+}
+
+/**
+ * 同步刷新 Provider，等待刷新完成后返回结果
+ */
+export async function refreshProviderSync(providerId: string): Promise<RefreshExecutionResult | null> {
+  if (!reserveProvider(providerId)) {
+    return null;
+  }
+
+  const jobId = createRefreshJob(providerId);
+  try {
+    return await runProviderRefresh(providerId, { trigger: 'manual', jobId });
+  } finally {
+    activeRefreshes.delete(providerId);
+  }
 }
 
 export async function refreshDueProviders(): Promise<void> {
@@ -109,7 +127,7 @@ function createRefreshJob(providerId: string): string {
 async function runProviderRefresh(providerId: string, options: RefreshOptions): Promise<RefreshExecutionResult> {
   const db = getDatabase();
   const provider = db.prepare(`
-    SELECT id, name, enabled, timeout_seconds, user_agent, request_headers_json
+    SELECT id, name, type, enabled, timeout_seconds, user_agent, request_headers_json
     FROM providers
     WHERE id = ?
   `).get(providerId) as ProviderRecord | undefined;
@@ -145,6 +163,7 @@ async function runProviderRefresh(providerId: string, options: RefreshOptions): 
         userAgent: provider.user_agent || undefined,
         headers,
         name: provider.name,
+        preferredFormat: mapProviderTypeToFormat(provider.type),
       });
 
       if (result.success) {
@@ -173,6 +192,20 @@ async function runProviderRefresh(providerId: string, options: RefreshOptions): 
 
   finalizeRefreshFailure(jobId, providerId, startedAt, lastError);
   return { jobId, status: 'failed', nodeCount: 0, errorMessage: lastError };
+}
+
+export function mapProviderTypeToFormat(providerType: string): SubscriptionFormat | undefined {
+  switch (providerType) {
+    case 'clash':
+      return SubscriptionFormat.CLASH_YAML;
+    case 'base64-uri':
+      return SubscriptionFormat.BASE64_URI;
+    case 'uri-list':
+      return SubscriptionFormat.URI_LIST;
+    case 'auto':
+    default:
+      return undefined;
+  }
 }
 
 function finalizeRefreshFailure(jobId: string, providerId: string, startedAt: number, errorMessage: string): void {

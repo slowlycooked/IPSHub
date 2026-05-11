@@ -3,6 +3,7 @@ import { getDatabase, withTransaction } from '@/db/client';
 import { createLogger } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
+import { decryptString, encryptString, hashToken } from '@/utils/crypto';
 
 const logger = createLogger('profiles-service');
 
@@ -41,13 +42,6 @@ function generateToken(): string {
 }
 
 /**
- * Token 哈希（只保存哈希值）
- */
-function hashToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
-
-/**
  * 创建 Profile
  */
 export function createProfile(input: CreateProfileInput, userId: string): ProfileDTO {
@@ -55,6 +49,7 @@ export function createProfile(input: CreateProfileInput, userId: string): Profil
   const now = Date.now();
   const token = generateToken();
   const tokenHash = hashToken(token);
+  const tokenEncrypted = encryptString(token);
 
   return withTransaction((database) => {
     // 创建 profile
@@ -80,9 +75,9 @@ export function createProfile(input: CreateProfileInput, userId: string): Profil
     // 创建 token
     const tokenId = uuidv4();
     database.prepare(`
-      INSERT INTO profile_tokens (id, profile_id, token_hash, created_at)
-      VALUES (?, ?, ?, ?)
-    `).run(tokenId, profileId, tokenHash, now);
+      INSERT INTO profile_tokens (id, profile_id, token_hash, token_encrypted, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(tokenId, profileId, tokenHash, tokenEncrypted, now);
 
     logger.info(`Profile created: ${input.name}`);
 
@@ -100,7 +95,10 @@ export function createProfile(input: CreateProfileInput, userId: string): Profil
 export function getProfiles(userId: string): ProfileDTO[] {
   const db = getDatabase();
   const profiles = db.prepare('SELECT * FROM profiles WHERE user_id = ?').all(userId) as any[];
-  return profiles.map(toDTO);
+  return profiles.map((profile) => ({
+    ...toDTO(profile),
+    token: getLatestTokenForProfile(profile.id),
+  }));
 }
 
 /**
@@ -109,7 +107,12 @@ export function getProfiles(userId: string): ProfileDTO[] {
 export function getProfileById(id: string, userId: string): ProfileDTO | null {
   const db = getDatabase();
   const profile = db.prepare('SELECT * FROM profiles WHERE id = ? AND user_id = ?').get(id, userId) as any;
-  return profile ? toDTO(profile) : null;
+  return profile
+    ? {
+        ...toDTO(profile),
+        token: getLatestTokenForProfile(profile.id),
+      }
+    : null;
 }
 
 /**
@@ -231,6 +234,7 @@ export function regenerateToken(id: string, userId: string): ProfileDTO | null {
 
     const token = generateToken();
     const tokenHash = hashToken(token);
+    const tokenEncrypted = encryptString(token);
     const now = Date.now();
 
     // 删除旧 token
@@ -239,9 +243,9 @@ export function regenerateToken(id: string, userId: string): ProfileDTO | null {
     // 创建新 token
     const tokenId = uuidv4();
     database.prepare(`
-      INSERT INTO profile_tokens (id, profile_id, token_hash, created_at)
-      VALUES (?, ?, ?, ?)
-    `).run(tokenId, id, tokenHash, now);
+      INSERT INTO profile_tokens (id, profile_id, token_hash, token_encrypted, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(tokenId, id, tokenHash, tokenEncrypted, now);
 
     // 更新 profile updated_at
     database.prepare('UPDATE profiles SET updated_at = ? WHERE id = ?').run(now, id);
@@ -292,4 +296,26 @@ function toDTO(dbProfile: any): ProfileDTO {
     created_at: dbProfile.created_at,
     updated_at: dbProfile.updated_at,
   };
+}
+
+function getLatestTokenForProfile(profileId: string): string | undefined {
+  const db = getDatabase();
+  const tokenRow = db.prepare(`
+    SELECT token_encrypted
+    FROM profile_tokens
+    WHERE profile_id = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(profileId) as { token_encrypted?: string | null } | undefined;
+
+  if (!tokenRow?.token_encrypted) {
+    return undefined;
+  }
+
+  try {
+    return decryptString(tokenRow.token_encrypted);
+  } catch (error) {
+    logger.warn({ profileId }, 'Failed to decrypt profile token for response');
+    return undefined;
+  }
 }

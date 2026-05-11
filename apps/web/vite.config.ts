@@ -15,6 +15,11 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+    define: {
+      // Exposes the direct backend URL so subscription URLs bypass the Vite proxy.
+      // In production builds, import.meta.env.DEV is false so this is dead code.
+      __BACKEND_ORIGIN__: JSON.stringify(backendTarget),
+    },
     server: {
       port: 5173,
       middlewares: [

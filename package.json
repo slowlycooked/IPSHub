@@ -7,6 +7,8 @@
   "scripts": {
     "install-all": "pnpm install",
     "dev": "pnpm -r --parallel dev",
+    "dev:start": "bash scripts/dev-start.sh",
+    "dev:stop": "bash scripts/dev-stop.sh",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",

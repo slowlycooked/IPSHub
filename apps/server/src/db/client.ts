@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { createHash } from 'node:crypto';
 import { createLogger } from '../utils/logger';
-import { decryptString } from '../utils/crypto';
+import { decryptString, encryptString } from '../utils/crypto';
 import { SCHEMA } from './schema';
 
 const logger = createLogger('db');
@@ -88,6 +88,7 @@ interface LegacyProfileRecord {
   updated_at?: string | number;
   token_hash?: string;
   token?: string;
+  token_encrypted?: string;
 }
 
 interface LegacyRefreshJobRecord {
@@ -180,6 +181,9 @@ export function initializeTables(database: Database.Database): void {
 
 function runMigrations(database: Database.Database): void {
   ensureProvidersTableShape(database);
+  ensureNodesTableShape(database);
+  ensureNodesProtocolSupportsHysteria2(database);
+  ensureProfileTokensTableShape(database);
   ensureColumn(database, 'providers', 'enabled', 'INTEGER DEFAULT 1');
   ensureColumn(database, 'providers', 'timeout_seconds', 'INTEGER DEFAULT 30');
   ensureColumn(database, 'providers', 'user_agent', 'TEXT');
@@ -191,6 +195,126 @@ function runMigrations(database: Database.Database): void {
   ensureColumn(database, 'access_logs', 'response_size', 'INTEGER');
   ensureColumn(database, 'access_logs', 'duration_ms', 'INTEGER');
   ensureColumn(database, 'refresh_jobs', 'duration_ms', 'INTEGER');
+}
+
+function ensureNodesTableShape(database: Database.Database): void {
+  const nodesTable = database
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'nodes'")
+    .get() as { sql?: string } | undefined;
+
+  const tableSql = nodesTable?.sql || '';
+  const hasCompositeUnique = tableSql.includes('UNIQUE(provider_id, fingerprint)');
+  const hasGlobalFingerprintUnique = tableSql.includes('fingerprint TEXT UNIQUE');
+  const needsRebuild = hasGlobalFingerprintUnique || !hasCompositeUnique;
+
+  if (needsRebuild) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS nodes_migrated (
+        id TEXT PRIMARY KEY,
+        fingerprint TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        protocol TEXT NOT NULL CHECK (protocol IN ('ss', 'vmess', 'trojan', 'vless', 'socks5', 'http', 'hysteria2')),
+        name TEXT NOT NULL,
+        server TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        uuid TEXT,
+        cipher TEXT,
+        password TEXT,
+        tls TEXT,
+        tls_insecure INTEGER DEFAULT 0,
+        enabled INTEGER DEFAULT 1,
+        last_seen_at INTEGER,
+        stale INTEGER DEFAULT 0,
+        tag TEXT,
+        extra_data TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
+        UNIQUE(provider_id, fingerprint)
+      );
+
+      INSERT INTO nodes_migrated (
+        id, fingerprint, provider_id, protocol, name, server, port,
+        uuid, cipher, password, tls, tls_insecure, enabled,
+        last_seen_at, stale, tag, extra_data, created_at, updated_at
+      )
+      SELECT
+        id,
+        fingerprint,
+        provider_id,
+        protocol,
+        name,
+        server,
+        port,
+        uuid,
+        cipher,
+        password,
+        tls,
+        COALESCE(tls_insecure, 0),
+        COALESCE(enabled, 1),
+        NULL,
+        0,
+        tag,
+        COALESCE(extra_data, '{}'),
+        created_at,
+        updated_at
+      FROM nodes;
+
+      DROP TABLE nodes;
+      ALTER TABLE nodes_migrated RENAME TO nodes;
+    `);
+  }
+
+  ensureColumn(database, 'nodes', 'last_seen_at', 'INTEGER');
+  ensureColumn(database, 'nodes', 'stale', 'INTEGER DEFAULT 0');
+}
+
+function ensureNodesProtocolSupportsHysteria2(database: Database.Database): void {
+  const nodesTable = database
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'nodes'")
+    .get() as { sql?: string } | undefined;
+
+  const tableSql = nodesTable?.sql || '';
+  if (tableSql.includes("'hysteria2'")) {
+    return; // Already supports hysteria2
+  }
+
+  // Rebuild nodes table with updated CHECK constraint that includes hysteria2
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS nodes_hy2_migrated (
+      id TEXT PRIMARY KEY,
+      fingerprint TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      protocol TEXT NOT NULL CHECK (protocol IN ('ss', 'vmess', 'trojan', 'vless', 'socks5', 'http', 'hysteria2')),
+      name TEXT NOT NULL,
+      server TEXT NOT NULL,
+      port INTEGER NOT NULL,
+      uuid TEXT,
+      cipher TEXT,
+      password TEXT,
+      tls TEXT,
+      tls_insecure INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1,
+      last_seen_at INTEGER,
+      stale INTEGER DEFAULT 0,
+      tag TEXT,
+      extra_data TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE,
+      UNIQUE(provider_id, fingerprint)
+    );
+
+    INSERT INTO nodes_hy2_migrated SELECT * FROM nodes;
+    DROP TABLE nodes;
+    ALTER TABLE nodes_hy2_migrated RENAME TO nodes;
+  `);
+
+  logger.info('Migrated nodes table to support hysteria2 protocol');
+}
+
+function ensureProfileTokensTableShape(database: Database.Database): void {
+  ensureColumn(database, 'profile_tokens', 'token_encrypted', 'TEXT');
 }
 
 function ensureProvidersTableShape(database: Database.Database): void {
@@ -294,6 +418,10 @@ function loadLegacyJsonDatabase(dbPath: string): LegacyJsonDatabase | null {
   const sidecarLegacy = readLegacyJsonIfPresent(sidecarPath);
   if (sidecarLegacy) {
     logger.warn(`Detected legacy JSON sidecar database at ${sidecarPath}; importing into SQLite database ${dbPath}`);
+    // 备份 sidecar 文件，防止重复导入
+    const backupPath = reserveLegacyBackupPath(sidecarPath);
+    fs.renameSync(sidecarPath, backupPath);
+    logger.info(`Legacy JSON sidecar backed up to ${backupPath}`);
     return sidecarLegacy;
   }
 
@@ -444,8 +572,8 @@ function importLegacyJsonDatabase(database: Database.Database, legacy: LegacyJso
         INSERT OR IGNORE INTO nodes (
           id, fingerprint, provider_id, protocol, name, server, port,
           uuid, cipher, password, tls, tls_insecure, enabled, tag,
-          extra_data, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          extra_data, last_seen_at, stale, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         node.id || `${node.provider_id}:${node.fingerprint || node.name}`,
         node.fingerprint || createLegacyNodeFingerprint(node),
@@ -462,6 +590,8 @@ function importLegacyJsonDatabase(database: Database.Database, legacy: LegacyJso
         normalizeBoolean(node.enabled, true),
         node.tag || null,
         node.extra_data || '{}',
+        normalizeTimestamp(node.updated_at),
+        0,
         normalizeTimestamp(node.created_at),
         normalizeTimestamp(node.updated_at)
       );
@@ -497,13 +627,15 @@ function importLegacyJsonDatabase(database: Database.Database, legacy: LegacyJso
 
       const tokenHash = profile.token_hash || hashLegacyToken(profile.token);
       if (tokenHash) {
+        const tokenEncrypted = profile.token_encrypted || (profile.token ? encryptString(profile.token) : null);
         database.prepare(`
-          INSERT OR IGNORE INTO profile_tokens (id, profile_id, token_hash, created_at)
-          VALUES (?, ?, ?, ?)
+          INSERT OR IGNORE INTO profile_tokens (id, profile_id, token_hash, token_encrypted, created_at)
+          VALUES (?, ?, ?, ?, ?)
         `).run(
           `${profile.id}:legacy-token`,
           profile.id,
           tokenHash,
+          tokenEncrypted,
           normalizeTimestamp(profile.created_at)
         );
       }

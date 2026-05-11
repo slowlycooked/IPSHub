@@ -13,6 +13,9 @@ export function generateFingerprint(node: ProxyNode): string {
     node.uuid || node.password || '',
     node.cipher || '',
     node.tls || '',
+    // Include host/path so CDN-fronted nodes (same server:port, different backend) are treated as distinct
+    node.host || '',
+    node.path || '',
   ].filter(Boolean);
 
   const str = parts.join(':');
@@ -50,33 +53,86 @@ export function isSameNode(node1: ProxyNode, node2: ProxyNode): boolean {
  * 保留较新的信息，但保持较好的名称
  */
 export function mergeNodes(primary: ProxyNode, secondary: ProxyNode): ProxyNode {
-  // 选择更好的名称（更短或不包含数字的）
   const primaryScore = scoreNodeName(primary.name);
   const secondaryScore = scoreNodeName(secondary.name);
   
   return {
     ...primary,
     name: primaryScore >= secondaryScore ? primary.name : secondary.name,
-    // 使用 primary 的 provider 信息
     updatedAt: primary.updatedAt || Date.now(),
   };
 }
 
 /**
- * 评分节点名称质量（用于在合并时选择更好的名称）
+ * 订阅元信息假节点的特征模式（流量/到期/重置信息）
+ * 供应商用相同连接参数的假节点在 Clash UI 中显示订阅信息
  */
-function scoreNodeName(name: string): number {
-  let score = name.length;
-  
-  // 偏好更短的名称
-  score -= name.length;
-  
-  // 偏好中文或有意义的名称
+const INFO_NODE_PATTERNS = [
+  /剩余流量/,
+  /距离下次重置/,
+  /套餐到期/,
+  /到期时间/,
+  /流量：/,
+  /流量:/,
+  /重置剩余/,
+  /套餐.*\d{4}-\d{2}-\d{2}/,  // 套餐到期：2026-06-10
+  /^\d{4}-\d{2}-\d{2}$/,       // 纯日期
+];
+
+/**
+ * 判断节点名是否为订阅元信息假节点
+ */
+export function isInfoNode(name: string): boolean {
+  return INFO_NODE_PATTERNS.some(pattern => pattern.test(name));
+}
+
+/**
+ * 生成含名称的指纹，用于区分"相同连接参数但不同名称"的真实节点
+ * 供应商有时会对同一后端创建多个命名条目以支持负载均衡场景
+ */
+export function generateNamedFingerprint(node: ProxyNode): string {
+  const parts = [
+    node.protocol,
+    node.server,
+    node.port,
+    node.uuid || node.password || '',
+    node.cipher || '',
+    node.tls || '',
+    node.host || '',
+    node.path || '',
+    node.name,
+  ].filter(Boolean);
+
+  const str = parts.join(':');
+  return crypto.createHash('sha256').update(str).digest('hex').slice(0, 16);
+}
+
+/**
+ * 评分节点名称质量（用于在合并时选择更好的名称）
+ * 高分 = 更像真实代理节点；低分 = 更像订阅元信息假节点
+ */
+export function scoreNodeName(name: string): number {
+  // 订阅信息假节点直接降到最低分
+  if (INFO_NODE_PATTERNS.some(pattern => pattern.test(name))) {
+    return -1000;
+  }
+
+  let score = 0;
+
+  // 包含国旗 emoji（🇭🇰 🇺🇸 等）是真实节点的强信号
+  if (/\p{Regional_Indicator}{2}/u.test(name)) score += 50;
+
+  // 包含中文（地名等）
   if (/[\u4e00-\u9fff]/.test(name)) score += 10;
-  
-  // 降低只包含数字和特殊字符的名称
+
+  // 包含数字序号（香港01、美国03等）
+  if (/[\u4e00-\u9fff]\d+/.test(name)) score += 10;
+
+  // 包含倍率信息（是真实节点的一部分）
+  if (/\d+(\.\d+)?[xX倍]/.test(name)) score += 5;
+
+  // 纯数字/纯符号降分
   if (/^\d+$/.test(name)) score -= 20;
-  if (/[^\w\u4e00-\u9fff-]/.test(name)) score -= 5;
-  
+
   return score;
 }

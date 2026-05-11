@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-pnpm-lock.yaml
 yarn.lock
 package-lock.json
 
@@ -34,6 +33,10 @@ pnpm-debug.log*
 # Runtime
 data/
 config/
+apps/server/data/
+
+# Dev scripts state
+scripts/.dev.pids
 
 # OS
 .DS_Store

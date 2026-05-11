@@ -100,10 +100,14 @@ export function ProvidersPage() {
 
   const refreshMutation = useMutation({
     mutationFn: (id: string) => providersApi.refreshNow(id),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['providers'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      pushToast('Refresh task submitted', 'success');
+      if (data?.status === 'failed') {
+        pushToast(`Refresh failed: ${data.errorMessage || 'unknown error'}`, 'error');
+      } else {
+        pushToast(`Refreshed successfully (${data?.nodeCount ?? 0} nodes)`, 'success');
+      }
     },
   });
 

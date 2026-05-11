@@ -8,5 +8,8 @@ export const providersApi = {
   update: (id: string, payload: Partial<ProviderInput>) =>
     apiClient.put<{ provider: Provider }>(`/api/providers/${id}`, payload),
   delete: (id: string) => apiClient.delete<{ message: string }>(`/api/providers/${id}`),
-  refreshNow: (id: string) => apiClient.post<{ message: string }>(`/api/providers/${id}/refresh`),
+  refreshNow: (id: string) =>
+    apiClient.post<{ provider: Provider; nodeCount: number; status: string; errorMessage?: string }>(
+      `/api/providers/${id}/refresh`
+    ),
 };

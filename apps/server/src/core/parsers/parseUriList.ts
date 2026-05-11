@@ -88,6 +88,8 @@ function parseUri(uri: string, providerId?: string): ProxyNode | null {
       return parseTrojanUri(trimmedUri, providerId);
     } else if (trimmedUri.startsWith('vless://')) {
       return parseVlessUri(trimmedUri, providerId);
+    } else if (trimmedUri.startsWith('hysteria2://') || trimmedUri.startsWith('hy2://')) {
+      return parseHysteria2Uri(trimmedUri, providerId);
     } else {
       throw new Error(`Unsupported URI scheme: ${trimmedUri.split('://')[0]}`);
     }
@@ -110,10 +112,17 @@ function parseVlessUri(uri: string, providerId?: string): ProxyNode {
     throw new Error('Invalid VLESS URI: missing uuid, host, or port');
   }
 
-  const transport = url.searchParams.get('type') || 'tcp';
-  const tlsParam = url.searchParams.get('tls') || url.searchParams.get('security') || '';
-  const sni = url.searchParams.get('host') || url.searchParams.get('sni') || '';
+  const transport = url.searchParams.get('type') || url.searchParams.get('network') || 'tcp';
+  const security = url.searchParams.get('security') || '';
+  const tlsParam = url.searchParams.get('tls') || security || '';
+  const sni = url.searchParams.get('sni') || url.searchParams.get('host') || '';
   const path = url.searchParams.get('path') || '';
+  const grpcServiceName =
+    url.searchParams.get('serviceName') || url.searchParams.get('grpc-service-name') || '';
+  const flow = url.searchParams.get('flow') || undefined;
+  const realityPublicKey = url.searchParams.get('pbk') || url.searchParams.get('public-key') || undefined;
+  const realityShortId = url.searchParams.get('sid') || url.searchParams.get('short-id') || undefined;
+  const realityFingerprint = url.searchParams.get('fp') || url.searchParams.get('fingerprint') || undefined;
 
   const name = decodeURIComponent(url.hash.slice(1) || 'VLESS');
 
@@ -123,11 +132,52 @@ function parseVlessUri(uri: string, providerId?: string): ProxyNode {
     server: host,
     port,
     uuid,
-    tls: tlsParam || 'tls',
+    tls: tlsParam || undefined,
     transport,
     host: sni,
     path: path,
+    serviceName: grpcServiceName || undefined,
+    flow,
+    realityPublicKey,
+    realityShortId,
+    realityFingerprint,
     fingerprint: '',
+    ...(providerId && { providerId }),
+  };
+
+  return node;
+}
+
+/**
+ * 解析 Hysteria2 URI
+ * 格式: hysteria2://password@host:port/?insecure=1&sni=sni&mport=60000-65530#name
+ */
+function parseHysteria2Uri(uri: string, providerId?: string): ProxyNode {
+  const url = new URL(uri);
+  const password = decodeURIComponent(url.username) || '';
+  const host = url.hostname || '';
+  const port = parseInt(url.port) || 443;
+
+  if (!host || !port) {
+    throw new Error('Invalid Hysteria2 URI: missing host or port');
+  }
+
+  const sni = url.searchParams.get('sni') || '';
+  const insecure = url.searchParams.get('insecure') === '1';
+  const mport = url.searchParams.get('mport') || undefined;
+  const name = decodeURIComponent(url.hash.slice(1) || 'Hysteria2');
+
+  const node: ProxyNode = {
+    name,
+    protocol: 'hysteria2' as any,
+    server: host,
+    port,
+    password,
+    tls: 'tls',
+    tlsInsecure: insecure,
+    host: sni || undefined,
+    fingerprint: '',
+    ...(mport && { extraData: { mport } }),
     ...(providerId && { providerId }),
   };
 

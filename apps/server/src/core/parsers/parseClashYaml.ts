@@ -14,18 +14,42 @@ interface ClashProxy {
   cipher?: string;
   uuid?: string;
   alterId?: number;
-  tls?: string;
-  'tls-fingerprint'?: string;
-  'tls-skip-cert-verify'?: boolean;
-  'allow-insecure'?: boolean;
+  'alter-id'?: number;
+  /** Mihomo uses boolean true for tls */
+  tls?: boolean | string;
+  network?: string;
+  /** legacy field name used by some providers */
   transport?: string;
+  servername?: string;
+  sni?: string;
   host?: string;
   path?: string;
+  flow?: string;
+  udp?: boolean;
+  'udp-relay'?: boolean;
+  'skip-cert-verify'?: boolean;
+  'allow-insecure'?: boolean;
+  'tls-fingerprint'?: string;
+  'client-fingerprint'?: string;
   obfs?: string;
   'obfs-host'?: string;
-  'sni'?: string;
-  'skip-cert-verify'?: boolean;
   username?: string;
+  'ws-opts'?: {
+    path?: string;
+    headers?: Record<string, string>;
+  };
+  'grpc-opts'?: {
+    'grpc-service-name'?: string;
+  };
+  'h2-opts'?: {
+    host?: string[];
+    path?: string;
+  };
+  'reality-opts'?: {
+    'public-key'?: string;
+    'short-id'?: string;
+    fingerprint?: string;
+  };
   [key: string]: any;
 }
 
@@ -108,40 +132,86 @@ function parseClashProxy(proxy: ClashProxy, providerId?: string): ProxyNode | nu
         udpRelay: proxy['udp-relay'] === true || proxy['udp'] === true,
       });
 
-    case 'vmess':
+    case 'vmess': {
+      const wsOpts  = proxy['ws-opts']  ?? {};
+      const grpcOpts = proxy['grpc-opts'] ?? {};
+      const h2Opts  = proxy['h2-opts']  ?? {};
+      // Clash YAML uses `network`, some old formats use `transport`
+      const network = proxy.network || proxy.transport || 'tcp';
+      // TLS for vmess is a boolean `true` in mihomo format
+      const hasTls  = proxy.tls === true || proxy.tls === 'tls';
+      // ws Host header > outer servername/sni/host fields
+      const wsHost  =
+        wsOpts.headers?.Host || wsOpts.headers?.host || '';
+      const sniHost = proxy.servername || proxy.sni || proxy.host || '';
       return normalizeNode({
         ...baseNode,
         protocol: 'vmess',
         uuid: proxy.uuid || '',
-        alterId: proxy.alterId || 0,
-        tls: proxy.tls || proxy['tls-skip-cert-verify'] ? 'tls' : '',
-        transport: proxy.transport || 'tcp',
-        host: proxy.host || '',
-        path: proxy.path || '',
+        alterId: proxy['alter-id'] ?? proxy.alterId ?? 0,
+        cipher: proxy.cipher || 'auto',
+        tls: hasTls ? 'tls' : '',
+        tlsInsecure: proxy['skip-cert-verify'] || proxy['allow-insecure'] || false,
+        transport: network,
+        host: wsHost || sniHost,
+        path: wsOpts.path || (h2Opts.path as string | undefined) || proxy.path || '',
+        serviceName: grpcOpts['grpc-service-name'] || '',
+        udpRelay: proxy.udp === true || proxy['udp-relay'] === true,
         obfs: proxy.obfs || '',
         obfsHost: proxy['obfs-host'] || '',
       });
+    }
 
-    case 'trojan':
+    case 'trojan': {
+      const wsOpts   = proxy['ws-opts']   ?? {};
+      const grpcOpts  = proxy['grpc-opts']  ?? {};
+      const network  = proxy.network || proxy.transport || 'tcp';
       return normalizeNode({
         ...baseNode,
         protocol: 'trojan',
         password: proxy.password || '',
         tls: 'tls',
+        tlsInsecure: proxy['skip-cert-verify'] || proxy['allow-insecure'] || false,
         allowInsecure: proxy['skip-cert-verify'] || proxy['allow-insecure'] || false,
-        host: proxy.host || proxy.sni || '',
+        host: proxy.sni || proxy.servername || proxy.host || '',
+        transport: network,
+        path: wsOpts.path || proxy.path || '',
+        serviceName: grpcOpts['grpc-service-name'] || '',
+        udpRelay: proxy.udp === true || proxy['udp-relay'] === true,
       });
+    }
 
-    case 'vless':
+    case 'vless': {
+      const wsOpts     = proxy['ws-opts']     ?? {};
+      const grpcOpts    = proxy['grpc-opts']    ?? {};
+      const h2Opts     = proxy['h2-opts']     ?? {};
+      const realityOpts = proxy['reality-opts'] ?? {};
+      // Reject nodes that declare reality-opts without the mandatory public-key
+      if (proxy['reality-opts'] && !realityOpts['public-key']) {
+        throw new Error(`VLESS node "${proxy.name}" has reality-opts but is missing public-key`);
+      }
+      const network    = proxy.network || proxy.transport || 'tcp';
+      const hasTls     = proxy.tls === true || proxy.tls === 'tls';
+      const wsHost     =
+        wsOpts.headers?.Host || wsOpts.headers?.host || '';
+      const sniHost    = proxy.servername || proxy.sni || proxy.host || '';
       return normalizeNode({
         ...baseNode,
         protocol: 'vless' as any,
         uuid: proxy.uuid || '',
-        tls: proxy.tls || proxy['tls-skip-cert-verify'] ? 'tls' : '',
-        transport: proxy.transport || 'tcp',
-        host: proxy.host || '',
-        path: proxy.path || '',
+        tls: hasTls ? 'tls' : '',
+        tlsInsecure: proxy['skip-cert-verify'] || proxy['allow-insecure'] || false,
+        transport: network,
+        host: wsHost || sniHost,
+        path: wsOpts.path || (h2Opts.path as string | undefined) || proxy.path || '',
+        serviceName: grpcOpts['grpc-service-name'] || '',
+        flow: proxy.flow || '',
+        realityPublicKey:  realityOpts['public-key']  || '',
+        realityShortId:    realityOpts['short-id']     || '',
+        realityFingerprint: realityOpts['fingerprint'] || proxy['client-fingerprint'] || '',
+        udpRelay: proxy.udp === true || proxy['udp-relay'] === true,
       });
+    }
 
     case 'socks5':
     case 'http':

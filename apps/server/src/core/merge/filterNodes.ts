@@ -1,20 +1,34 @@
 import { ProxyNode } from '@/types/proxy';
-import { generateFingerprint, mergeNodes } from './fingerprint';
+import { generateFingerprint, generateNamedFingerprint, isInfoNode, mergeNodes } from './fingerprint';
 
 /**
  * 去重节点
- * 如果多个节点有相同的指纹，保留最优的那个
+ *
+ * 合并规则：
+ * - 两个节点均为订阅元信息假节点（剩余流量/到期等） → 合并，保留评分更高的名称
+ * - 两个节点名称相同（真正的完全重复） → 合并
+ * - 否则（真实代理节点，名称不同，但连接参数相同）→ 保留两者，
+ *   为后来者赋予含名称的指纹，以便分别存储
  */
 export function dedupeNodes(nodes: ProxyNode[]): ProxyNode[] {
   const seen = new Map<string, ProxyNode>();
 
   for (const node of nodes) {
     const fp = node.fingerprint || generateFingerprint(node);
-    
+
     if (seen.has(fp)) {
       const existing = seen.get(fp)!;
-      // 如果找到重复，合并两个节点
-      seen.set(fp, mergeNodes(existing, node));
+      const bothInfo = isInfoNode(node.name) && isInfoNode(existing.name);
+      const sameName = node.name === existing.name;
+
+      if (bothInfo || sameName) {
+        // 真正的重复或元信息节点 → 合并保留最优名称
+        seen.set(fp, mergeNodes(existing, node));
+      } else {
+        // 真实代理节点，不同名称 → 用含名称的指纹保留两者
+        const namedFp = generateNamedFingerprint(node);
+        seen.set(namedFp, { ...node, fingerprint: namedFp });
+      }
     } else {
       seen.set(fp, { ...node, fingerprint: fp });
     }

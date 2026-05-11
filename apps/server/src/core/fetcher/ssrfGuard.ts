@@ -99,6 +99,53 @@ export interface FetchOptions {
   headers?: Record<string, string>;
 }
 
+const HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+
+function toLatin1HeaderValue(value: string): string {
+  let replaced = false;
+  const latin1 = Array.from(value)
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      if (code <= 0xff) {
+        return char;
+      }
+      replaced = true;
+      return '?';
+    })
+    .join('')
+    .replace(/[\r\n]/g, ' ')
+    .trim();
+
+  if (replaced) {
+    logger.warn('Outgoing header value contained non-Latin-1 characters and was sanitized');
+  }
+
+  return latin1;
+}
+
+function normalizeOutgoingHeaders(
+  userAgent: string,
+  headers: Record<string, string>
+): Record<string, string> {
+  const normalized: Record<string, string> = {
+    'User-Agent': toLatin1HeaderValue(userAgent || 'IPSHub/1.0'),
+    'Accept': '*/*',
+    'Accept-Encoding': 'gzip, deflate',
+  };
+
+  for (const [rawKey, rawValue] of Object.entries(headers)) {
+    const key = rawKey.trim();
+    if (!key || !HEADER_NAME_RE.test(key)) {
+      logger.warn({ header: rawKey }, 'Ignored invalid outgoing header name');
+      continue;
+    }
+
+    normalized[key] = toLatin1HeaderValue(String(rawValue));
+  }
+
+  return normalized;
+}
+
 /**
  * 安全地获取远程订阅内容
  */
@@ -120,14 +167,11 @@ export async function safeFetch(
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
+    const requestHeaders = normalizeOutgoingHeaders(userAgent, headers);
+
     const response = await fetch(url.toString(), {
       signal: controller.signal,
-      headers: {
-        'User-Agent': userAgent,
-        'Accept': '*/*',
-        'Accept-Encoding': 'gzip, deflate',
-        ...headers,
-      },
+      headers: requestHeaders,
       redirect: 'follow',
     });
 

@@ -1,6 +1,6 @@
 // Proxy node types and utilities
 
-export type ProxyProtocol = 'ss' | 'vmess' | 'trojan' | 'http' | 'socks5' | 'vless';
+export type ProxyProtocol = 'ss' | 'vmess' | 'trojan' | 'http' | 'socks5' | 'vless' | 'hysteria2';
 
 export interface ProxyNode {
   // Unique identifier based on protocol and config
@@ -26,6 +26,13 @@ export interface ProxyNode {
   path?: string;
   obfs?: string;
   obfsHost?: string;
+  serviceName?: string;
+  flow?: string;
+
+  // Reality (VLESS)
+  realityPublicKey?: string;
+  realityShortId?: string;
+  realityFingerprint?: string;
   
   // Trojan
   allowInsecure?: boolean;
@@ -43,6 +50,9 @@ export interface ProxyNode {
   provider?: string;
   createdAt?: number;
   updatedAt?: number;
+  lastSeenAt?: number;
+  stale?: boolean;
+  extraData?: Record<string, unknown>;
 }
 
 export interface ParseResult {

@@ -12,7 +12,7 @@ import {
   UpdateProviderInput,
 } from './service';
 import { createLogger } from '@/utils/logger';
-import { enqueueProviderRefresh } from './refresh';
+import { refreshProviderSync } from './refresh';
 
 const logger = createLogger('provider-routes');
 
@@ -208,11 +208,9 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
           });
         }
 
-        const queued = enqueueProviderRefresh(request.params.id, {
-          trigger: 'manual',
-        });
+        const result = await refreshProviderSync(request.params.id);
 
-        if (!queued) {
+        if (!result) {
           return reply.status(409).send({
             success: false,
             error: {
@@ -222,9 +220,16 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
           });
         }
 
+        // Return the updated provider so the client can update immediately
+        const updated = getProviderById(request.params.id, userId);
         return {
           success: true,
-          data: { jobId: queued.jobId, message: 'Provider refresh started' },
+          data: {
+            provider: updated,
+            nodeCount: result.nodeCount,
+            status: result.status,
+            errorMessage: result.errorMessage,
+          },
         };
       } catch (error) {
         logger.error('Refresh provider error', error);

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { profilesApi, type ProfilePayload } from '@/api/profiles';
+import { fetchServerConfig } from '@/api/config';
 import { queryClient } from '@/api/queryClient';
 import type { OutputType, Profile, ProfileUrls } from '@/types/profile';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -57,8 +58,18 @@ function toPayload(form: FormState): ProfilePayload {
   };
 }
 
-function buildProfileUrls(name: string, token: string): ProfileUrls {
-  const origin = window.location.origin;
+declare const __BACKEND_ORIGIN__: string;
+
+function buildProfileUrls(name: string, token: string, serverBaseUrl: string): ProfileUrls {
+  // Priority: APP_BASE_URL from server config > dev backend origin > current origin
+  let origin: string;
+  if (serverBaseUrl) {
+    origin = serverBaseUrl;
+  } else if (import.meta.env.DEV) {
+    origin = typeof __BACKEND_ORIGIN__ !== 'undefined' ? __BACKEND_ORIGIN__ : window.location.origin;
+  } else {
+    origin = window.location.origin;
+  }
   const encodedName = encodeURIComponent(name);
 
   return {
@@ -67,6 +78,10 @@ function buildProfileUrls(name: string, token: string): ProfileUrls {
     raw: `${origin}/sub/raw/${encodedName}?token=${token}`,
     provider: `${origin}/sub/provider/${encodedName}?token=${token}`,
   };
+}
+
+function hasUsableToken(token: string | undefined): token is string {
+  return typeof token === 'string' && token.trim().length > 0;
 }
 
 export function ProfilesPage() {
@@ -89,6 +104,14 @@ export function ProfilesPage() {
       }
     },
   });
+
+  const { data: serverConfig } = useQuery({
+    queryKey: ['server-config'],
+    queryFn: fetchServerConfig,
+    staleTime: Infinity,
+  });
+
+  const serverBaseUrl = serverConfig?.baseUrl ?? '';
 
   const profiles = useMemo(() => data?.profiles || [], [data]);
 
@@ -181,7 +204,7 @@ export function ProfilesPage() {
     return <ErrorState message="Failed to load profiles." onRetry={() => refetch()} />;
   }
 
-  const issuedUrls = issuedToken ? buildProfileUrls(issuedToken.name, issuedToken.token) : null;
+  const issuedUrls = issuedToken ? buildProfileUrls(issuedToken.name, issuedToken.token, serverBaseUrl) : null;
 
   return (
     <div>
@@ -374,7 +397,17 @@ export function ProfilesPage() {
         widthClassName="max-w-2xl"
       >
         {urlsModal && (() => {
-          const urls = buildProfileUrls(urlsModal.name, urlsModal.token ?? '');
+          if (!hasUsableToken(urlsModal.token)) {
+            return (
+              <div className="space-y-4">
+                <div className="bg-surface-1 border border-line rounded-lg p-4 text-sm text-text-muted">
+                  Regenerate Token to view subscription URLs.
+                </div>
+              </div>
+            );
+          }
+
+          const urls = buildProfileUrls(urlsModal.name, urlsModal.token, serverBaseUrl);
           return (
             <div className="space-y-4">
               <div className="bg-surface-1 border border-line rounded-lg p-4 text-sm text-text-muted">

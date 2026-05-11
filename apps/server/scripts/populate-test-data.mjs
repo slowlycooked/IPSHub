@@ -93,6 +93,19 @@ try {
       .digest('hex');
 
     const nodeId = uuidv4();
+    
+    // Serialize extra data fields that aren't in the main columns
+    const extraData = {
+      ...(node.host ? { host: node.host } : {}),
+      ...(node.transport ? { transport: node.transport } : {}),
+      ...(node.path ? { path: node.path } : {}),
+      ...(node.serviceName ? { serviceName: node.serviceName } : {}),
+      ...(node.flow ? { flow: node.flow } : {}),
+      ...(node.realityPublicKey ? { realityPublicKey: node.realityPublicKey } : {}),
+      ...(node.realityShortId ? { realityShortId: node.realityShortId } : {}),
+      ...(node.realityFingerprint ? { realityFingerprint: node.realityFingerprint } : {}),
+    };
+    
     try {
       insertNode.run(
         nodeId,
@@ -109,7 +122,7 @@ try {
         node.allowInsecure ? 1 : 0,
         1, // enabled
         null,
-        JSON.stringify({}),
+        JSON.stringify(extraData),
         now,
         now
       );

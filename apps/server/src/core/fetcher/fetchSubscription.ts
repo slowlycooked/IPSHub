@@ -1,5 +1,5 @@
 import { safeFetch, FetchOptions } from './ssrfGuard';
-import { parseSubscription } from '@/core/parsers/detectType';
+import { parseSubscription, SubscriptionFormat } from '@/core/parsers/detectType';
 import { ProxyNode } from '@/types/proxy';
 import { dedupeNodes } from '@/core/merge/filterNodes';
 import { cleanNodeNames, dedupeNodeNames } from '@/core/merge/renameNodes';
@@ -23,13 +23,13 @@ export interface SubscriptionFetchResult {
 export async function fetchSubscription(
   url: string,
   providerId: string,
-  options: FetchOptions & { name?: string } = {}
+  options: FetchOptions & { name?: string; preferredFormat?: SubscriptionFormat } = {}
 ): Promise<SubscriptionFetchResult> {
   const startTime = Date.now();
   const fetchOptions: FetchOptions = {
     timeout: options.timeout || 30000,
     maxSize: options.maxSize || 10 * 1024 * 1024,
-    userAgent: options.userAgent || `IPSHub/1.0 (Provider: ${options.name || providerId})`,
+    userAgent: options.userAgent || `IPSHub/1.0 (Provider-ID: ${providerId})`,
     allowPrivate: process.env.NODE_ENV === 'development',
     headers: options.headers,
   };
@@ -43,7 +43,7 @@ export async function fetchSubscription(
     logger.debug(`Fetched ${contentLength} bytes from ${providerId}`);
 
     // 解析内容
-    const parseResult = parseSubscription(content, providerId);
+    const parseResult = parseSubscription(content, providerId, options.preferredFormat);
 
     // 后处理节点
     let nodes = parseResult.nodes;
@@ -73,7 +73,7 @@ export async function fetchSubscription(
       success: true,
       nodes,
       nodeCount: nodes.length,
-      format: 'auto-detected',
+      format: options.preferredFormat || 'auto-detected',
       errors: parseResult.errors,
       fetchedAt: new Date().toISOString(),
       contentLength,
