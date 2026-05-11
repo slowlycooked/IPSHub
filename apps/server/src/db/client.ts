@@ -1,178 +1,770 @@
+import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { createHash } from 'node:crypto';
 import { createLogger } from '../utils/logger';
+import { decryptString } from '../utils/crypto';
+import { SCHEMA } from './schema';
 
 const logger = createLogger('db');
 
-interface StorageData {
-  users: any[];
-  providers: any[];
-  nodes: any[];
-  profiles: any[];
-  refreshJobs: any[];
-  accessLogs: any[];
+let db: Database.Database | null = null;
+
+interface LegacyJsonDatabase {
+  users?: LegacyUserRecord[];
+  providers?: LegacyProviderRecord[];
+  nodes?: LegacyNodeRecord[];
+  profiles?: LegacyProfileRecord[];
+  refreshJobs?: LegacyRefreshJobRecord[];
+  accessLogs?: LegacyAccessLogRecord[];
 }
 
-let storageData: StorageData = {
-  users: [],
-  providers: [],
-  nodes: [],
-  profiles: [],
-  refreshJobs: [],
-  accessLogs: [],
-};
+interface LegacyUserRecord {
+  id: string;
+  username: string;
+  password_hash: string;
+  created_at?: string | number;
+  updated_at?: string | number;
+}
 
-let storagePath: string;
+interface LegacyProviderRecord {
+  id: string;
+  user_id?: string;
+  name: string;
+  url?: string;
+  subscription_url?: string;
+  url_encrypted?: string;
+  subscription_url_encrypted?: string;
+  type?: string;
+  enabled?: number | boolean;
+  refresh_interval?: number;
+  refresh_interval_minutes?: number;
+  timeout_seconds?: number;
+  user_agent?: string | null;
+  request_headers_json?: string | null;
+  provider_prefix?: string | null;
+  last_refresh_at?: string | number | null;
+  last_success_at?: string | number | null;
+  last_error?: string | null;
+  last_node_count?: number;
+  failed_count?: number;
+  created_at?: string | number;
+  updated_at?: string | number;
+}
 
-export function initDatabase(): void {
-  const dbPath = process.env.DB_PATH || './data/ipshub.db.json';
-  storagePath = dbPath;
+interface LegacyNodeRecord {
+  id?: string;
+  fingerprint?: string;
+  provider_id?: string;
+  protocol?: string;
+  name?: string;
+  server?: string;
+  port?: number;
+  uuid?: string;
+  cipher?: string;
+  password?: string;
+  tls?: string;
+  tls_insecure?: number | boolean;
+  enabled?: number | boolean;
+  tag?: string;
+  extra_data?: string;
+  created_at?: string | number;
+  updated_at?: string | number;
+}
+
+interface LegacyProfileRecord {
+  id: string;
+  user_id?: string;
+  name: string;
+  description?: string;
+  output_format?: string;
+  output_type?: string;
+  include_protocols?: string[];
+  exclude_keywords?: string[];
+  filter_json?: string;
+  access_count?: number;
+  last_accessed_at?: string | number | null;
+  created_at?: string | number;
+  updated_at?: string | number;
+  token_hash?: string;
+  token?: string;
+}
+
+interface LegacyRefreshJobRecord {
+  id: string;
+  provider_id: string;
+  status?: string;
+  node_count?: number;
+  error?: string;
+  error_message?: string;
+  duration_ms?: number;
+  created_at?: string | number;
+  updated_at?: string | number;
+  started_at?: string | number;
+  finished_at?: string | number;
+}
+
+interface LegacyAccessLogRecord {
+  id: string;
+  profile_id: string;
+  ip_address?: string;
+  client_ip?: string;
+  user_agent?: string;
+  status_code?: number;
+  response_size?: number;
+  duration_ms?: number;
+  accessed_at?: string | number;
+  created_at?: string | number;
+}
+
+/**
+ * 初始化数据库连接
+ */
+export function initDatabase(): Database.Database {
+  if (db) return db;
+
+  const dbPath = process.env.DB_PATH || './data/ipshub.db';
   
-  // Create directory if it doesn't exist
-  const dir = path.dirname(storagePath);
+  // 确保目录存在
+  const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  // Load existing data if it exists
-  if (fs.existsSync(storagePath)) {
-    try {
-      const data = fs.readFileSync(storagePath, 'utf-8');
-      storageData = JSON.parse(data);
-      logger.info(`Database loaded from ${storagePath}`);
-    } catch (error) {
-      logger.error('Failed to load database, starting fresh');
-      saveData();
-    }
-  } else {
-    saveData();
-  }
+  const legacyJson = loadLegacyJsonDatabase(dbPath);
 
-  logger.info(`Database initialized at ${storagePath}`);
+  // 创建数据库连接
+  db = new Database(dbPath);
+  
+  // 启用外键约束
+  db.pragma('foreign_keys = ON');
+  
+  // 设置 journal 模式为 WAL（提高并发性能）
+  db.pragma('journal_mode = WAL');
+  
+  logger.info(`Database initialized: ${dbPath}`);
+  
+  // 初始化所有表
+  initializeTables(db);
+
+  if (legacyJson) {
+    importLegacyJsonDatabase(db, legacyJson);
+  }
+  
+  return db;
 }
 
-function saveData(): void {
-  if (!storagePath) return;
+/**
+ * 创建所有表
+ */
+export function initializeTables(database: Database.Database): void {
+  // 创建表
+  database.exec(SCHEMA.users);
+  database.exec(SCHEMA.providers);
+  database.exec(SCHEMA.nodes);
+  database.exec(SCHEMA.profiles);
+  database.exec(SCHEMA.profile_tokens);
+  database.exec(SCHEMA.refresh_jobs);
+  database.exec(SCHEMA.access_logs);
+  database.exec(SCHEMA.app_settings);
+
+  runMigrations(database);
+
+  // 创建索引
+  SCHEMA.indexes.forEach((indexSql) => {
+    database.exec(indexSql);
+  });
+
+  logger.info('Database tables initialized');
+}
+
+function runMigrations(database: Database.Database): void {
+  ensureProvidersTableShape(database);
+  ensureColumn(database, 'providers', 'enabled', 'INTEGER DEFAULT 1');
+  ensureColumn(database, 'providers', 'timeout_seconds', 'INTEGER DEFAULT 30');
+  ensureColumn(database, 'providers', 'user_agent', 'TEXT');
+  ensureColumn(database, 'providers', 'request_headers_json', 'TEXT');
+  ensureColumn(database, 'providers', 'provider_prefix', 'TEXT');
+  ensureColumn(database, 'providers', 'last_success_at', 'INTEGER');
+  ensureColumn(database, 'providers', 'last_error', 'TEXT');
+  ensureColumn(database, 'access_logs', 'status_code', 'INTEGER');
+  ensureColumn(database, 'access_logs', 'response_size', 'INTEGER');
+  ensureColumn(database, 'access_logs', 'duration_ms', 'INTEGER');
+  ensureColumn(database, 'refresh_jobs', 'duration_ms', 'INTEGER');
+}
+
+function ensureProvidersTableShape(database: Database.Database): void {
+  const providerTable = database
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'providers'")
+    .get() as { sql?: string } | undefined;
+
+  const tableSql = providerTable?.sql || '';
+  const needsRebuild =
+    tableSql.includes("CHECK (type IN ('clash', 'subscription'))") ||
+    !tableSql.includes('enabled INTEGER') ||
+    !tableSql.includes('timeout_seconds INTEGER') ||
+    !tableSql.includes('last_success_at INTEGER');
+
+  if (!needsRebuild) {
+    return;
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS providers_migrated (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      url_encrypted BLOB NOT NULL,
+      type TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      refresh_interval INTEGER DEFAULT 3600,
+      timeout_seconds INTEGER DEFAULT 30,
+      user_agent TEXT,
+      request_headers_json TEXT,
+      provider_prefix TEXT,
+      last_refresh_at INTEGER,
+      last_success_at INTEGER,
+      last_error TEXT,
+      last_node_count INTEGER DEFAULT 0,
+      failed_count INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, name)
+    );
+
+    INSERT INTO providers_migrated (
+      id, user_id, name, url, url_encrypted, type, enabled, refresh_interval,
+      timeout_seconds, user_agent, request_headers_json, provider_prefix,
+      last_refresh_at, last_success_at, last_error, last_node_count,
+      failed_count, created_at, updated_at
+    )
+    SELECT
+      id,
+      user_id,
+      name,
+      url,
+      url_encrypted,
+      type,
+      COALESCE(enabled, 1),
+      COALESCE(refresh_interval, 3600),
+      COALESCE(timeout_seconds, 30),
+      user_agent,
+      request_headers_json,
+      provider_prefix,
+      last_refresh_at,
+      last_success_at,
+      last_error,
+      COALESCE(last_node_count, 0),
+      COALESCE(failed_count, 0),
+      created_at,
+      updated_at
+    FROM providers;
+
+    DROP TABLE providers;
+    ALTER TABLE providers_migrated RENAME TO providers;
+  `);
+}
+
+function ensureColumn(
+  database: Database.Database,
+  tableName: string,
+  columnName: string,
+  definition: string
+): void {
+  const columns = database.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition};`);
+}
+
+function loadLegacyJsonDatabase(dbPath: string): LegacyJsonDatabase | null {
+  const directLegacy = readLegacyJsonIfPresent(dbPath);
+  if (directLegacy) {
+    const backupPath = reserveLegacyBackupPath(dbPath);
+    fs.renameSync(dbPath, backupPath);
+    logger.warn(`Detected legacy JSON database at ${dbPath}; backed up to ${backupPath} before SQLite migration`);
+    return directLegacy;
+  }
+
+  const sidecarPath = `${dbPath}.json`;
+  const sidecarLegacy = readLegacyJsonIfPresent(sidecarPath);
+  if (sidecarLegacy) {
+    logger.warn(`Detected legacy JSON sidecar database at ${sidecarPath}; importing into SQLite database ${dbPath}`);
+    return sidecarLegacy;
+  }
+
+  return null;
+}
+
+function readLegacyJsonIfPresent(filePath: string): LegacyJsonDatabase | null {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile() || stat.size === 0) {
+    return null;
+  }
+
+  const descriptor = fs.openSync(filePath, 'r');
+  const headerBuffer = Buffer.alloc(Math.min(64, stat.size));
+
   try {
-    fs.writeFileSync(storagePath, JSON.stringify(storageData, null, 2));
+    fs.readSync(descriptor, headerBuffer, 0, headerBuffer.length, 0);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+
+  const header = headerBuffer.toString('utf8').trimStart();
+  if (!header.startsWith('{')) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as LegacyJsonDatabase;
   } catch (error) {
-    logger.error('Failed to save database', error);
+    logger.error({ error, filePath }, 'Failed to parse legacy JSON database file');
+    throw error;
   }
 }
 
-export function getDatabase() {
-  return {
-    users: {
-      getAll: () => storageData.users,
-      getById: (id: string) => storageData.users.find((u: any) => u.id === id),
-      getByUsername: (username: string) => storageData.users.find((u: any) => u.username === username),
-      insert: (user: any) => {
-        storageData.users.push(user);
-        saveData();
-      },
-      update: (id: string, updates: any) => {
-        const user = storageData.users.find((u: any) => u.id === id);
-        if (user) {
-          Object.assign(user, updates, { updated_at: new Date().toISOString() });
-          saveData();
-        }
-      },
-    },
-    providers: {
-      getAll: () => storageData.providers,
-      getById: (id: string) => storageData.providers.find((p: any) => p.id === id),
-      insert: (provider: any) => {
-        storageData.providers.push(provider);
-        saveData();
-      },
-      update: (id: string, updates: any) => {
-        const provider = storageData.providers.find((p: any) => p.id === id);
-        if (provider) {
-          Object.assign(provider, updates, { updated_at: new Date().toISOString() });
-          saveData();
-        }
-      },
-      delete: (id: string) => {
-        const index = storageData.providers.findIndex((p: any) => p.id === id);
-        if (index > -1) {
-          storageData.providers.splice(index, 1);
-          saveData();
-        }
-      },
-    },
-    nodes: {
-      getAll: () => storageData.nodes,
-      getByProviderId: (providerId: string) => storageData.nodes.filter((n: any) => n.provider_id === providerId),
-      getById: (id: string) => storageData.nodes.find((n: any) => n.id === id),
-      getByFingerprint: (fingerprint: string) => storageData.nodes.find((n: any) => n.fingerprint === fingerprint),
-      insert: (node: any) => {
-        storageData.nodes.push(node);
-        saveData();
-      },
-      update: (id: string, updates: any) => {
-        const node = storageData.nodes.find((n: any) => n.id === id);
-        if (node) {
-          Object.assign(node, updates, { updated_at: new Date().toISOString() });
-          saveData();
-        }
-      },
-      deleteByProviderId: (providerId: string) => {
-        storageData.nodes = storageData.nodes.filter((n: any) => n.provider_id !== providerId);
-        saveData();
-      },
-    },
-    profiles: {
-      getAll: () => storageData.profiles,
-      getById: (id: string) => storageData.profiles.find((p: any) => p.id === id),
-      getByName: (name: string) => storageData.profiles.find((p: any) => p.name === name),
-      getByTokenHash: (tokenHash: string) => storageData.profiles.find((p: any) => p.token_hash === tokenHash),
-      insert: (profile: any) => {
-        storageData.profiles.push(profile);
-        saveData();
-      },
-      update: (id: string, updates: any) => {
-        const profile = storageData.profiles.find((p: any) => p.id === id);
-        if (profile) {
-          Object.assign(profile, updates, { updated_at: new Date().toISOString() });
-          saveData();
-        }
-      },
-      delete: (id: string) => {
-        const index = storageData.profiles.findIndex((p: any) => p.id === id);
-        if (index > -1) {
-          storageData.profiles.splice(index, 1);
-          saveData();
-        }
-      },
-    },
-    refreshJobs: {
-      getAll: () => storageData.refreshJobs,
-      getByProviderId: (providerId: string) => storageData.refreshJobs.filter((j: any) => j.provider_id === providerId),
-      insert: (job: any) => {
-        storageData.refreshJobs.push(job);
-        saveData();
-      },
-      update: (id: string, updates: any) => {
-        const job = storageData.refreshJobs.find((j: any) => j.id === id);
-        if (job) {
-          Object.assign(job, updates);
-          saveData();
-        }
-      },
-    },
-    accessLogs: {
-      getAll: () => storageData.accessLogs,
-      getByProfileId: (profileId: string) => storageData.accessLogs.filter((l: any) => l.profile_id === profileId),
-      insert: (log: any) => {
-        storageData.accessLogs.push(log);
-        saveData();
-      },
-    },
-  };
+function reserveLegacyBackupPath(filePath: string): string {
+  const candidateBase = `${filePath}.legacy-json`;
+  if (!fs.existsSync(candidateBase)) {
+    return candidateBase;
+  }
+
+  let index = 1;
+  while (fs.existsSync(`${candidateBase}.${index}`)) {
+    index += 1;
+  }
+
+  return `${candidateBase}.${index}`;
 }
 
-export function closeDatabase(): void {
-  saveData();
-  logger.info('Database closed');
+function importLegacyJsonDatabase(database: Database.Database, legacy: LegacyJsonDatabase): void {
+  const users = legacy.users || [];
+  const providers = legacy.providers || [];
+  const nodes = legacy.nodes || [];
+  const profiles = legacy.profiles || [];
+  const refreshJobs = legacy.refreshJobs || [];
+  const accessLogs = legacy.accessLogs || [];
+
+  database.transaction(() => {
+    const resolvedUserIds = new Map<string, string>();
+
+    for (const user of users) {
+      database.prepare(`
+        INSERT OR IGNORE INTO users (id, username, password_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        user.id,
+        user.username,
+        user.password_hash,
+        normalizeTimestamp(user.created_at),
+        normalizeTimestamp(user.updated_at)
+      );
+
+      const resolvedUser = database.prepare('SELECT id FROM users WHERE username = ?').get(user.username) as { id: string } | undefined;
+      if (resolvedUser) {
+        resolvedUserIds.set(user.id, resolvedUser.id);
+      }
+    }
+
+    const fallbackUserId = resolveLegacyUserId(users[0]?.id, resolvedUserIds);
+
+    for (const provider of providers) {
+      const userId = resolveLegacyUserId(provider.user_id || fallbackUserId, resolvedUserIds);
+      if (!userId) {
+        continue;
+      }
+
+      const encryptedUrl = provider.url_encrypted || provider.subscription_url_encrypted;
+      const decryptedUrl = firstNonEmptyString(
+        provider.url,
+        provider.subscription_url,
+        decryptLegacyUrl(encryptedUrl)
+      );
+
+      if (!decryptedUrl || !encryptedUrl) {
+        continue;
+      }
+
+      const refreshIntervalSeconds =
+        typeof provider.refresh_interval === 'number'
+          ? provider.refresh_interval
+          : typeof provider.refresh_interval_minutes === 'number'
+            ? provider.refresh_interval_minutes * 60
+            : 3600;
+
+      database.prepare(`
+        INSERT OR IGNORE INTO providers (
+          id, user_id, name, url, url_encrypted, type, enabled, refresh_interval,
+          timeout_seconds, user_agent, request_headers_json, provider_prefix,
+          last_refresh_at, last_success_at, last_error, last_node_count,
+          failed_count, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        provider.id,
+        userId,
+        provider.name,
+        decryptedUrl,
+        Buffer.from(encryptedUrl),
+        provider.type || 'auto',
+        normalizeBoolean(provider.enabled, true),
+        refreshIntervalSeconds,
+        provider.timeout_seconds || 30,
+        provider.user_agent || null,
+        provider.request_headers_json || null,
+        provider.provider_prefix || null,
+        normalizeNullableTimestamp(provider.last_refresh_at),
+        normalizeNullableTimestamp(provider.last_success_at),
+        provider.last_error || null,
+        provider.last_node_count || 0,
+        provider.failed_count || 0,
+        normalizeTimestamp(provider.created_at),
+        normalizeTimestamp(provider.updated_at)
+      );
+    }
+
+    for (const node of nodes) {
+      if (!node.provider_id || !node.protocol || !node.name || !node.server || !node.port) {
+        continue;
+      }
+
+      if (!isSupportedProtocol(node.protocol)) {
+        continue;
+      }
+
+      database.prepare(`
+        INSERT OR IGNORE INTO nodes (
+          id, fingerprint, provider_id, protocol, name, server, port,
+          uuid, cipher, password, tls, tls_insecure, enabled, tag,
+          extra_data, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        node.id || `${node.provider_id}:${node.fingerprint || node.name}`,
+        node.fingerprint || createLegacyNodeFingerprint(node),
+        node.provider_id,
+        node.protocol,
+        node.name,
+        node.server,
+        node.port,
+        node.uuid || null,
+        node.cipher || null,
+        node.password || null,
+        node.tls || null,
+        normalizeBoolean(node.tls_insecure, false),
+        normalizeBoolean(node.enabled, true),
+        node.tag || null,
+        node.extra_data || '{}',
+        normalizeTimestamp(node.created_at),
+        normalizeTimestamp(node.updated_at)
+      );
+    }
+
+    for (const profile of profiles) {
+      const userId = resolveLegacyUserId(profile.user_id || fallbackUserId, resolvedUserIds);
+      if (!userId) {
+        continue;
+      }
+
+      const filters = parseLegacyFilterJson(profile.filter_json);
+      const outputFormat = normalizeOutputFormat(profile.output_format || profile.output_type);
+
+      database.prepare(`
+        INSERT OR IGNORE INTO profiles (
+          id, user_id, name, description, output_format, include_protocols,
+          exclude_keywords, access_count, last_accessed_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        profile.id,
+        userId,
+        profile.name,
+        profile.description || null,
+        outputFormat,
+        serializeOptionalArray(profile.include_protocols || filters.includeProtocols),
+        serializeOptionalArray(profile.exclude_keywords || filters.excludeKeywords),
+        profile.access_count || 0,
+        normalizeNullableTimestamp(profile.last_accessed_at),
+        normalizeTimestamp(profile.created_at),
+        normalizeTimestamp(profile.updated_at)
+      );
+
+      const tokenHash = profile.token_hash || hashLegacyToken(profile.token);
+      if (tokenHash) {
+        database.prepare(`
+          INSERT OR IGNORE INTO profile_tokens (id, profile_id, token_hash, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(
+          `${profile.id}:legacy-token`,
+          profile.id,
+          tokenHash,
+          normalizeTimestamp(profile.created_at)
+        );
+      }
+    }
+
+    for (const job of refreshJobs) {
+      database.prepare(`
+        INSERT OR IGNORE INTO refresh_jobs (
+          id, provider_id, status, node_count, error_message, duration_ms, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        job.id,
+        job.provider_id,
+        normalizeRefreshStatus(job.status),
+        job.node_count || 0,
+        job.error_message || job.error || null,
+        job.duration_ms || null,
+        normalizeTimestamp(job.created_at || job.started_at),
+        normalizeTimestamp(job.updated_at || job.finished_at || job.started_at)
+      );
+    }
+
+    for (const log of accessLogs) {
+      database.prepare(`
+        INSERT OR IGNORE INTO access_logs (
+          id, profile_id, ip_address, user_agent, status_code, response_size, duration_ms, accessed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        log.id,
+        log.profile_id,
+        log.ip_address || log.client_ip || null,
+        log.user_agent || null,
+        log.status_code || null,
+        log.response_size || null,
+        log.duration_ms || null,
+        normalizeTimestamp(log.accessed_at || log.created_at)
+      );
+    }
+  })();
+
+  logger.info(
+    {
+      users: users.length,
+      providers: providers.length,
+      nodes: nodes.length,
+      profiles: profiles.length,
+      refreshJobs: refreshJobs.length,
+      accessLogs: accessLogs.length,
+    },
+    'Legacy JSON database imported into SQLite'
+  );
 }
+
+function normalizeTimestamp(value: string | number | null | undefined): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.length > 0) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && value.trim() !== '') {
+      return numeric;
+    }
+
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return Date.now();
+}
+
+function normalizeNullableTimestamp(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  return normalizeTimestamp(value);
+}
+
+function normalizeBoolean(value: number | boolean | undefined, defaultValue: boolean): number {
+  if (typeof value === 'boolean') {
+    return value ? 1 : 0;
+  }
+
+  if (typeof value === 'number') {
+    return value === 0 ? 0 : 1;
+  }
+
+  return defaultValue ? 1 : 0;
+}
+
+function decryptLegacyUrl(encryptedUrl: string | undefined): string | undefined {
+  if (!encryptedUrl) {
+    return undefined;
+  }
+
+  try {
+    return decryptString(encryptedUrl);
+  } catch {
+    return undefined;
+  }
+}
+
+function firstNonEmptyString(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => typeof value === 'string' && value.length > 0);
+}
+
+function isSupportedProtocol(protocol: string): boolean {
+  return ['ss', 'vmess', 'trojan', 'vless', 'socks5', 'http'].includes(protocol);
+}
+
+function createLegacyNodeFingerprint(node: LegacyNodeRecord): string {
+  return createHash('sha256')
+    .update([node.protocol || '', node.server || '', String(node.port || ''), node.uuid || '', node.password || '', node.cipher || ''].join(':'))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function parseLegacyFilterJson(rawFilterJson: string | undefined): { includeProtocols?: string[]; excludeKeywords?: string[] } {
+  if (!rawFilterJson) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(rawFilterJson) as {
+      includeProtocols?: string[];
+      excludeNameRegex?: string[];
+    };
+
+    return {
+      includeProtocols: parsed.includeProtocols,
+      excludeKeywords: parsed.excludeNameRegex,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function normalizeOutputFormat(value: string | undefined): string {
+  if (value === 'clash_provider') {
+    return value;
+  }
+
+  if (value === 'clash' || value === 'loon' || value === 'raw') {
+    return value;
+  }
+
+  if (value === 'mihomo' || value === 'provider') {
+    return 'clash';
+  }
+
+  return 'clash';
+}
+
+function serializeOptionalArray(value: string[] | undefined): string | null {
+  if (!value || value.length === 0) {
+    return null;
+  }
+
+  return JSON.stringify(value);
+}
+
+function hashLegacyToken(token: string | undefined): string | undefined {
+  if (!token) {
+    return undefined;
+  }
+
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function normalizeRefreshStatus(status: string | undefined): string {
+  if (status === 'pending' || status === 'running' || status === 'success' || status === 'failed') {
+    return status;
+  }
+
+  if (status === 'queued') {
+    return 'pending';
+  }
+
+  return 'success';
+}
+
+function resolveLegacyUserId(userId: string | undefined, resolvedUserIds: Map<string, string>): string | undefined {
+  if (!userId) {
+    return undefined;
+  }
+
+  return resolvedUserIds.get(userId) || userId;
+}
+
+/**
+ * 获取数据库实例
+ */
+export function getDatabase(): Database.Database {
+  if (!db) {
+    throw new Error('Database not initialized. Call initDatabase first.');
+  }
+  return db;
+}
+
+/**
+ * 关闭数据库连接
+ */
+export function closeDatabase(): void {
+  if (db) {
+    db.close();
+    db = null;
+    logger.info('Database closed');
+  }
+}
+
+/**
+ * 执行事务
+ */
+export function withTransaction<T>(callback: (db: Database.Database) => T): T {
+  if (!db) {
+    throw new Error('Database not initialized');
+  }
+  
+  const transaction = db.transaction(callback);
+  return transaction(db);
+}
+
+/**
+ * 数据库查询助手
+ */
+export const dbHelpers = {
+  /**
+   * 执行 INSERT 或 UPDATE 操作
+   */
+  run: (sql: string, params: any[] = []) => {
+    const database = getDatabase();
+    const stmt = database.prepare(sql);
+    return stmt.run(...params);
+  },
+
+  /**
+   * 执行 SELECT 操作，返回单个结果
+   */
+  get: <T = any>(sql: string, params: any[] = []): T | undefined => {
+    const database = getDatabase();
+    const stmt = database.prepare(sql);
+    return stmt.get(...params) as T | undefined;
+  },
+
+  /**
+   * 执行 SELECT 操作，返回所有结果
+   */
+  all: <T = any>(sql: string, params: any[] = []): T[] => {
+    const database = getDatabase();
+    const stmt = database.prepare(sql);
+    return stmt.all(...params) as T[];
+  },
+
+  /**
+   * 执行事务
+   */
+  transaction: <T>(callback: (db: Database.Database) => T): T => {
+    return withTransaction(callback);
+  },
+};
 

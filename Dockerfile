@@ -6,11 +6,11 @@ WORKDIR /app
 # Install pnpm
 RUN npm install -g pnpm
 
-# Copy package files
-COPY package.json pnpm-lock.yaml ./
+# Copy workspace files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web ./apps/web
 
-# Install dependencies
+# Install dependencies for the entire workspace
 RUN pnpm install --frozen-lockfile
 
 # Build frontend
@@ -24,11 +24,11 @@ WORKDIR /app
 # Install pnpm
 RUN npm install -g pnpm
 
-# Copy package files
-COPY package.json pnpm-lock.yaml ./
+# Copy workspace files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server ./apps/server
 
-# Install dependencies
+# Install dependencies for the entire workspace
 RUN pnpm install --frozen-lockfile
 
 # Build backend
@@ -39,15 +39,30 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install pnpm and dumb-init
-RUN npm install -g pnpm && apk add --no-cache dumb-init
+# Install dumb-init
+RUN apk add --no-cache dumb-init
 
 # Copy built backend
 COPY --from=backend-builder /app/apps/server/dist ./dist
 COPY --from=backend-builder /app/apps/server/package.json ./package.json
 
+# Install runtime dependencies only
+COPY --from=backend-builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=backend-builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY package.json ./package.json
+
+# Install pnpm for production dependency installation
+RUN npm install -g pnpm && pnpm install --frozen-lockfile --prod
+
 # Copy built frontend
 COPY --from=frontend-builder /app/apps/web/dist ./public
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s CMD wget -qO- http://localhost:8080/health || exit 1
+
+# Run with dumb-init to handle signals properly
+ENTRYPOINT ["/sbin/dumb-init", "--"]
+CMD ["node", "dist/index.js"]
 
 # Install production dependencies only
 RUN pnpm install --production --frozen-lockfile

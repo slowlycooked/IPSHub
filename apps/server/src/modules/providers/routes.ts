@@ -12,14 +12,16 @@ import {
   UpdateProviderInput,
 } from './service';
 import { createLogger } from '@/utils/logger';
+import { enqueueProviderRefresh } from './refresh';
 
 const logger = createLogger('provider-routes');
 
 export async function registerProviderRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/providers - 列出所有 Provider
-  app.get('/api/providers', { preHandler: requireAuth }, async (_request, reply) => {
+  app.get('/api/providers', { preHandler: requireAuth }, async (request, reply) => {
     try {
-      const providers = getProviders();
+      const userId = (request as any).user?.userId;
+      const providers = getProviders(userId);
       return {
         success: true,
         data: { providers },
@@ -42,6 +44,7 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
     { preHandler: requireAuth },
     async (request, reply) => {
       try {
+        const userId = (request as any).user?.userId;
         const parsed = createProviderSchema.safeParse(request.body);
         if (!parsed.success) {
           return reply.status(400).send({
@@ -53,7 +56,7 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
           });
         }
 
-        const provider = createProvider(parsed.data);
+        const provider = createProvider(parsed.data, userId);
         return {
           success: true,
           data: { provider },
@@ -77,7 +80,8 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
     { preHandler: requireAuth },
     async (request, reply) => {
       try {
-        const provider = getProviderById(request.params.id);
+        const userId = (request as any).user?.userId;
+        const provider = getProviderById(request.params.id, userId);
         if (!provider) {
           return reply.status(404).send({
             success: false,
@@ -111,6 +115,7 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
     { preHandler: requireAuth },
     async (request, reply) => {
       try {
+        const userId = (request as any).user?.userId;
         const parsed = updateProviderSchema.safeParse(request.body);
         if (!parsed.success) {
           return reply.status(400).send({
@@ -122,7 +127,7 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
           });
         }
 
-        const provider = updateProvider(request.params.id, parsed.data);
+        const provider = updateProvider(request.params.id, userId, parsed.data);
         if (!provider) {
           return reply.status(404).send({
             success: false,
@@ -156,7 +161,8 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
     { preHandler: requireAuth },
     async (request, reply) => {
       try {
-        const success = deleteProvider(request.params.id);
+        const userId = (request as any).user?.userId;
+        const success = deleteProvider(request.params.id, userId);
         if (!success) {
           return reply.status(404).send({
             success: false,
@@ -178,6 +184,55 @@ export async function registerProviderRoutes(app: FastifyInstance): Promise<void
           error: {
             code: 'INTERNAL_ERROR',
             message: 'Failed to delete provider',
+          },
+        });
+      }
+    }
+  );
+
+  // POST /api/providers/:id/refresh - 手动刷新 Provider
+  app.post<{ Params: { id: string } }>(
+    '/api/providers/:id/refresh',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      try {
+        const userId = (request as any).user?.userId;
+        const provider = getProviderById(request.params.id, userId);
+        if (!provider) {
+          return reply.status(404).send({
+            success: false,
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Provider not found',
+            },
+          });
+        }
+
+        const queued = enqueueProviderRefresh(request.params.id, {
+          trigger: 'manual',
+        });
+
+        if (!queued) {
+          return reply.status(409).send({
+            success: false,
+            error: {
+              code: 'REFRESH_CONFLICT',
+              message: 'Provider refresh already in progress',
+            },
+          });
+        }
+
+        return {
+          success: true,
+          data: { jobId: queued.jobId, message: 'Provider refresh started' },
+        };
+      } catch (error) {
+        logger.error('Refresh provider error', error);
+        return reply.status(500).send({
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Failed to refresh provider',
           },
         });
       }

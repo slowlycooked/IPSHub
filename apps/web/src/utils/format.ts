@@ -1,5 +1,5 @@
-export function formatDateTime(value?: string): string {
-  if (!value) {
+export function formatDateTime(value?: string | number): string {
+  if (value === undefined || value === null || value === '') {
     return '-';
   }
 
@@ -9,6 +9,22 @@ export function formatDateTime(value?: string): string {
   }
 
   return date.toLocaleString();
+}
+
+export function formatDuration(value?: number): string {
+  if (!value) {
+    return '-';
+  }
+
+  if (value < 1000) {
+    return `${value} ms`;
+  }
+
+  if (value < 60000) {
+    return `${(value / 1000).toFixed(1)} s`;
+  }
+
+  return `${Math.round(value / 1000)} s`;
 }
 
 export function truncate(value: string | undefined, max = 36): string {

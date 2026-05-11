@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { AppShell } from '@/components/layout/AppShell';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { LoginPage } from '@/pages/LoginPage';
-import { DashboardPage } from '@/pages/DashboardPage';
+import { DashboardView } from '@/pages/DashboardView';
 import { ProvidersPage } from '@/pages/ProvidersPage';
 import { NodesPage } from '@/pages/NodesPage';
 import { ProfilesPage } from '@/pages/ProfilesPage';
@@ -46,7 +46,7 @@ export function AppRoutes() {
         path="/"
         element={
           <ProtectedLayout>
-            <DashboardPage />
+            <DashboardView />
           </ProtectedLayout>
         }
       />

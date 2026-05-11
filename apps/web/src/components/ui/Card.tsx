@@ -12,8 +12,8 @@ export function Card({ children, className, ...props }: CardProps) {
   return (
     <div
       className={joinClassNames(
-        'rounded-md border border-neutral bg-white/90 backdrop-blur-sm',
-        'shadow-[0_4px_16px_rgba(15,23,42,0.04)]',
+        'rounded-[24px] border border-line/70 bg-panel/72 backdrop-blur-xl',
+        'shadow-[0_18px_55px_rgba(0,0,0,0.24)]',
         className
       )}
       {...props}

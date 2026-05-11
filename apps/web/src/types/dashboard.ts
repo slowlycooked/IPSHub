@@ -1,15 +1,19 @@
 import type { AccessLog, RefreshJobLog } from '@/types/logs';
+import type { Profile } from '@/types/profile';
 
 export interface DashboardStats {
-  providersTotal: number;
-  providersEnabled: number;
-  nodesTotal: number;
-  profilesTotal: number;
-  latestRefreshAt?: string;
+  totalProviders: number;
+  enabledProviders: number;
+  totalNodes: number;
+  enabledNodes: number;
+  totalProfiles: number;
+  totalRefreshJobs: number;
+  latestRefreshAt?: number;
 }
 
 export interface DashboardData {
   stats: DashboardStats;
-  recentRefreshJobs: RefreshJobLog[];
+  recentRefreshes: RefreshJobLog[];
   recentAccessLogs: AccessLog[];
+  topProfiles: Pick<Profile, 'id' | 'name' | 'access_count' | 'last_accessed_at'>[];
 }

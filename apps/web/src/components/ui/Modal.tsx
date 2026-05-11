@@ -22,16 +22,16 @@ export function Modal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4">
-      <div className={`w-full ${widthClassName} rounded-md border border-neutral bg-white`}>
-        <div className="flex items-center justify-between border-b border-neutral px-5 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className={`w-full ${widthClassName} rounded-[28px] border border-line bg-panel-strong shadow-[0_28px_90px_rgba(0,0,0,0.4)]`}>
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
           <h3 className="text-base font-semibold text-text">{title}</h3>
-          <button type="button" onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">
+          <button type="button" onClick={onClose} className="text-sm text-text-muted hover:text-text">
             Close
           </button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
-        {footer ? <div className="border-t border-neutral px-5 py-4">{footer}</div> : null}
+        {footer ? <div className="border-t border-line px-5 py-4">{footer}</div> : null}
       </div>
     </div>
   );

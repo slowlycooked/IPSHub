@@ -11,12 +11,12 @@ services:
       - TZ=Asia/Shanghai
       - NODE_ENV=production
       - APP_BASE_URL=http://localhost:8088
-      - APP_SECRET=please-change-this-secret-in-production
+      - APP_SECRET=55dc7581442d83e31df9e8ae953a1c86e5d7ca9aa79415af70fe29d9c240484f
       - ADMIN_USERNAME=admin
       - ADMIN_PASSWORD=please-change-this-password
-      - DB_PATH=/app/data/ipshub.db
       - SERVER_PORT=8080
       - LOG_LEVEL=info
+      - COOKIE_SECURE=false
     volumes:
       - ./data:/app/data
       - ./config:/app/config

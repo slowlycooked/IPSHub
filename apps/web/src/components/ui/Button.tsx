@@ -12,16 +12,16 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-white hover:bg-secondary disabled:bg-primary/70',
+  primary: 'border border-primary/40 bg-[linear-gradient(135deg,#3d76ff,#173ca8)] text-white shadow-[0_14px_28px_rgba(33,92,255,0.35)] hover:brightness-110 disabled:opacity-60',
   secondary:
-    'border border-slate-300 bg-white text-text hover:bg-slate-50 disabled:bg-white disabled:text-slate-400',
-  danger: 'bg-danger text-white hover:bg-red-600 disabled:bg-danger/70',
-  ghost: 'bg-transparent text-text hover:bg-slate-100 disabled:text-slate-400',
+    'border border-line bg-white/[0.04] text-text hover:bg-white/[0.08] disabled:text-text-dim',
+  danger: 'border border-red-400/30 bg-danger/90 text-white hover:bg-danger disabled:opacity-60',
+  ghost: 'bg-transparent text-text-muted hover:bg-white/[0.06] hover:text-text disabled:text-text-dim',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
   sm: 'h-9 px-3 text-sm',
-  md: 'h-10 px-4 text-sm',
+  md: 'h-11 px-4 text-sm',
 };
 
 function joinClassNames(...classes: Array<string | false | null | undefined>) {
@@ -47,7 +47,7 @@ export function Button({
       type={type}
       disabled={isDisabled}
       className={joinClassNames(
-        'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors',
+        'inline-flex items-center justify-center gap-2 rounded-2xl font-medium transition-all',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
         'disabled:cursor-not-allowed',
         variantClasses[variant],

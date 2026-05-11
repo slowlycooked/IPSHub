@@ -10,7 +10,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { formatDateTime, truncate } from '@/utils/format';
+import { formatDateTime, formatDuration, truncate } from '@/utils/format';
 
 type Tab = 'refresh' | 'access';
 
@@ -24,7 +24,7 @@ export function LogsPage() {
       try {
         return await logsApi.refreshJobs();
       } catch {
-        return { jobs: [] };
+        return { logs: [] };
       }
     },
   });
@@ -56,7 +56,7 @@ export function LogsPage() {
     );
   }
 
-  const refreshJobs = refreshQuery.data?.jobs || [];
+  const refreshJobs = refreshQuery.data?.logs || [];
   const accessLogs = accessQuery.data?.logs || [];
 
   return (
@@ -77,10 +77,10 @@ export function LogsPage() {
           refreshJobs.length === 0 ? (
             <EmptyState title="No refresh logs" description="Refresh tasks will appear here." />
           ) : (
-            <DataTable headers={['Provider', 'Status', 'Node Count', 'Started At', 'Finished At', 'Error']}>
+            <DataTable headers={['Provider', 'Status', 'Node Count', 'Duration', 'Updated At', 'Error']}>
               {refreshJobs.map((job) => (
-                <tr key={job.id} className="border-b border-slate-100 text-sm hover:bg-slate-50">
-                  <td className="px-4 py-3">{job.provider_name}</td>
+                <tr key={job.id} className="border-b border-line/60 text-sm text-text-muted hover:bg-white/[0.03]">
+                  <td className="px-4 py-3 text-text">{job.providerName}</td>
                   <td className="px-4 py-3">
                     <StatusBadge
                       tone={
@@ -94,17 +94,17 @@ export function LogsPage() {
                       {job.status}
                     </StatusBadge>
                   </td>
-                  <td className="px-4 py-3">{job.node_count ?? '-'}</td>
-                  <td className="px-4 py-3">{formatDateTime(job.started_at)}</td>
-                  <td className="px-4 py-3">{formatDateTime(job.finished_at)}</td>
-                  <td className="max-w-[220px] px-4 py-3" title={job.error || ''}>
-                    {job.error ? (
+                  <td className="px-4 py-3">{job.nodeCount ?? '-'}</td>
+                  <td className="px-4 py-3">{formatDuration(job.durationMs)}</td>
+                  <td className="px-4 py-3">{formatDateTime(job.updatedAt)}</td>
+                  <td className="max-w-[220px] px-4 py-3" title={job.errorMessage || ''}>
+                    {job.errorMessage ? (
                       <button
                         type="button"
                         className="w-full truncate text-left text-danger"
-                        onClick={() => setErrorDetail(job.error || '')}
+                        onClick={() => setErrorDetail(job.errorMessage || '')}
                       >
-                        {truncate(job.error, 32)}
+                        {truncate(job.errorMessage, 32)}
                       </button>
                     ) : (
                       '-'
@@ -119,15 +119,15 @@ export function LogsPage() {
         ) : (
           <DataTable headers={['Profile', 'Output Type', 'Client IP', 'User-Agent', 'Status Code', 'Created At']}>
             {accessLogs.map((log) => (
-              <tr key={log.id} className="border-b border-slate-100 text-sm hover:bg-slate-50">
-                <td className="px-4 py-3">{log.profile_name}</td>
-                <td className="px-4 py-3">{log.output_type}</td>
-                <td className="px-4 py-3 font-mono text-xs">{log.client_ip}</td>
-                <td className="max-w-[260px] px-4 py-3" title={log.user_agent}>
-                  {truncate(log.user_agent, 40)}
+              <tr key={log.id} className="border-b border-line/60 text-sm text-text-muted hover:bg-white/[0.03]">
+                <td className="px-4 py-3 text-text">{log.profileName}</td>
+                <td className="px-4 py-3">{log.outputFormat}</td>
+                <td className="px-4 py-3 font-mono text-xs">{log.ipAddress || '-'}</td>
+                <td className="max-w-[260px] px-4 py-3" title={log.userAgent || ''}>
+                  {truncate(log.userAgent, 40)}
                 </td>
-                <td className="px-4 py-3">{log.status_code}</td>
-                <td className="px-4 py-3">{formatDateTime(log.created_at)}</td>
+                <td className="px-4 py-3">{log.statusCode ?? '-'}</td>
+                <td className="px-4 py-3">{formatDateTime(log.accessedAt)}</td>
               </tr>
             ))}
           </DataTable>
@@ -140,7 +140,7 @@ export function LogsPage() {
         onClose={() => setErrorDetail('')}
         widthClassName="max-w-xl"
       >
-        <pre className="whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-xs text-slate-700">{errorDetail}</pre>
+        <pre className="whitespace-pre-wrap rounded-2xl bg-black/20 p-3 text-xs text-text">{errorDetail}</pre>
       </Modal>
     </div>
   );

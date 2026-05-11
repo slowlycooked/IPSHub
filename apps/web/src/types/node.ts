@@ -1,15 +1,14 @@
-export type NodeProtocol = 'vmess' | 'vless' | 'trojan' | 'ss' | 'ssr' | 'hysteria' | 'tuic' | 'unknown';
+export type NodeProtocol = 'vmess' | 'vless' | 'trojan' | 'ss' | 'socks5' | 'http';
 
 export interface NodeItem {
   id: string;
   name: string;
-  provider_id: string;
-  provider_name?: string;
+  providerId: string;
   protocol: NodeProtocol;
   server: string;
   port: number;
-  region?: string;
+  tag?: string;
   enabled: boolean;
-  last_seen_at?: string;
-  updated_at?: string;
+  createdAt?: number;
+  updatedAt?: number;
 }

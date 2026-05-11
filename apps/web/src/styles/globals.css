@@ -5,14 +5,19 @@
 @tailwind utilities;
 
 :root {
-  --color-primary: #0c5cab;
-  --color-secondary: #0a4a8a;
+  --color-primary: #4d7dff;
+  --color-secondary: #1f4bac;
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
-  --color-surface: #f4f7fb;
-  --color-text: #0f172a;
-  --color-neutral: #e2e8f0;
+  --color-surface: #08111f;
+  --color-text: #eff5ff;
+  --color-neutral: #1e293b;
+  --color-panel: rgba(9, 17, 30, 0.74);
+  --color-panel-strong: rgba(9, 17, 30, 0.92);
+  --color-line: rgba(148, 163, 184, 0.18);
+  --color-text-muted: #a9b7d2;
+  --color-text-dim: #6f87aa;
 }
 
 * {
@@ -28,6 +33,79 @@ body,
 body {
   margin: 0;
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
-  background: linear-gradient(180deg, #f7faff 0%, #f4f7fb 100%);
-  color: #0f172a;
+  background:
+    radial-gradient(circle at top, rgba(70, 113, 255, 0.2), transparent 26%),
+    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.12), transparent 24%),
+    linear-gradient(180deg, #050b15 0%, #08111f 44%, #0b1727 100%);
+  color: var(--color-text);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(circle at center, black, transparent 85%);
+}
+
+a {
+  color: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bg-app {
+  background: transparent;
+}
+
+.bg-panel {
+  background: var(--color-panel);
+}
+
+.bg-panel-strong {
+  background: var(--color-panel-strong);
+}
+
+.border-line {
+  border-color: var(--color-line);
+}
+
+.text-text-muted {
+  color: var(--color-text-muted);
+}
+
+.text-text-dim {
+  color: var(--color-text-dim);
+}
+
+@layer components {
+  .ip-input {
+    @apply w-full rounded-2xl border px-3 py-2.5 text-sm outline-none transition;
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(148, 163, 184, 0.18);
+    color: var(--color-text);
+  }
+
+  .ip-input::placeholder {
+    color: var(--color-text-dim);
+  }
+
+  .ip-input:focus {
+    border-color: rgba(77, 125, 255, 0.7);
+    box-shadow: 0 0 0 3px rgba(77, 125, 255, 0.16);
+  }
 }

@@ -1,21 +1,26 @@
-export type JobStatus = 'success' | 'failed' | 'running' | 'queued';
+export type JobStatus = 'success' | 'failed' | 'running' | 'pending';
 
 export interface RefreshJobLog {
   id: string;
-  provider_name: string;
+  providerId: string;
+  providerName: string;
   status: JobStatus;
-  node_count?: number;
-  started_at?: string;
-  finished_at?: string;
-  error?: string;
+  nodeCount?: number;
+  durationMs?: number;
+  createdAt?: number;
+  updatedAt?: number;
+  errorMessage?: string;
 }
 
 export interface AccessLog {
   id: string;
-  profile_name: string;
-  output_type: string;
-  client_ip: string;
-  user_agent: string;
-  status_code: number;
-  created_at: string;
+  profileId: string;
+  profileName: string;
+  outputFormat: string;
+  ipAddress?: string;
+  userAgent?: string;
+  statusCode?: number;
+  responseSize?: number;
+  durationMs?: number;
+  accessedAt: number;
 }

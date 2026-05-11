@@ -5,13 +5,16 @@ import { providersApi } from '@/api/providers';
 function fallbackDashboardData(): DashboardData {
   return {
     stats: {
-      providersTotal: 0,
-      providersEnabled: 0,
-      nodesTotal: 0,
-      profilesTotal: 0,
+      totalProviders: 0,
+      enabledProviders: 0,
+      totalNodes: 0,
+      enabledNodes: 0,
+      totalProfiles: 0,
+      totalRefreshJobs: 0,
     },
-    recentRefreshJobs: [],
+    recentRefreshes: [],
     recentAccessLogs: [],
+    topProfiles: [],
   };
 }
 
@@ -24,19 +27,22 @@ export async function getDashboardData(): Promise<DashboardData> {
       const providers = providerData.providers || [];
       return {
         stats: {
-          providersTotal: providers.length,
-          providersEnabled: providers.filter((provider) => provider.enabled).length,
-          nodesTotal: 0,
-          profilesTotal: 0,
+          totalProviders: providers.length,
+          enabledProviders: providers.filter((provider) => provider.enabled).length,
+          totalNodes: 0,
+          enabledNodes: 0,
+          totalProfiles: 0,
+          totalRefreshJobs: 0,
           latestRefreshAt:
             providers
               .map((provider) => provider.last_refresh_at)
-              .filter((value): value is string => Boolean(value))
-              .sort()
-              .slice(-1)[0] || undefined,
+              .filter((value): value is number => typeof value === 'number')
+              .sort((left, right) => left - right)
+              .slice(-1)[0],
         },
-        recentRefreshJobs: [],
+        recentRefreshes: [],
         recentAccessLogs: [],
+        topProfiles: [],
       };
     } catch {
       return fallbackDashboardData();

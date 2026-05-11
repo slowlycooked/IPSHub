@@ -131,4 +131,6 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
       },
     });
   }
-}
+    // 将用户信息附加到 request 对象上
+    (request as any).user = session;
+  }

@@ -7,11 +7,11 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const toneClasses: Record<BadgeTone, string> = {
-  success: 'border-emerald-100 bg-emerald-50 text-success',
-  warning: 'border-amber-100 bg-amber-50 text-warning',
-  danger: 'border-red-100 bg-red-50 text-danger',
-  neutral: 'border-slate-200 bg-slate-100 text-slate-600',
-  primary: 'border-blue-100 bg-blue-50 text-primary',
+  success: 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300',
+  warning: 'border-amber-400/30 bg-amber-500/10 text-amber-300',
+  danger: 'border-red-400/30 bg-red-500/10 text-red-300',
+  neutral: 'border-white/10 bg-white/[0.05] text-text-muted',
+  primary: 'border-blue-400/30 bg-blue-500/10 text-blue-200',
 };
 
 function joinClassNames(...classes: Array<string | false | null | undefined>) {
@@ -22,7 +22,7 @@ export function Badge({ tone = 'neutral', className, ...props }: BadgeProps) {
   return (
     <span
       className={joinClassNames(
-        'inline-flex items-center rounded-sm border px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium uppercase tracking-[0.18em]',
         toneClasses[tone],
         className
       )}

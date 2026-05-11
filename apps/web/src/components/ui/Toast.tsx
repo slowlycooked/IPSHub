@@ -16,12 +16,12 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 function toneClass(tone: ToastTone): string {
   if (tone === 'success') {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200';
   }
   if (tone === 'error') {
-    return 'border-red-200 bg-red-50 text-red-700';
+    return 'border-red-400/30 bg-red-500/10 text-red-200';
   }
-  return 'border-slate-200 bg-white text-slate-700';
+  return 'border-line bg-panel-strong text-text';
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -54,7 +54,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="fixed right-4 top-4 z-[60] space-y-2">
         {items.map((item) => (
-          <div key={item.id} className={`rounded-md border px-3 py-2 text-sm ${toneClass(item.tone)}`}>
+          <div key={item.id} className={`rounded-2xl border px-4 py-3 text-sm shadow-[0_18px_48px_rgba(0,0,0,0.25)] ${toneClass(item.tone)}`}>
             {item.message}
           </div>
         ))}

@@ -9,15 +9,15 @@ interface DataTableProps {
 
 export function DataTable({ headers, children, isEmpty = false, emptyText = 'No data.' }: DataTableProps) {
   return (
-    <div className="overflow-hidden rounded-md border border-neutral bg-white">
+    <div className="overflow-hidden rounded-[24px] border border-line/70 bg-panel-strong/90">
       <div className="overflow-x-auto">
         <table className="min-w-full border-collapse">
           <thead>
-            <tr className="border-b border-neutral bg-slate-50">
+            <tr className="border-b border-line/70 bg-white/[0.03]">
               {headers.map((header, index) => (
                 <th
                   key={index}
-                  className="px-4 py-3 text-left font-mono text-xs font-medium uppercase tracking-wide text-slate-500"
+                  className="px-4 py-4 text-left font-mono text-[11px] font-medium uppercase tracking-[0.24em] text-text-dim"
                 >
                   {header}
                 </th>
@@ -27,7 +27,7 @@ export function DataTable({ headers, children, isEmpty = false, emptyText = 'No 
           <tbody>
             {isEmpty ? (
               <tr>
-                <td colSpan={headers.length} className="px-4 py-10 text-center text-sm text-slate-500">
+                <td colSpan={headers.length} className="px-4 py-10 text-center text-sm text-text-muted">
                   {emptyText}
                 </td>
               </tr>

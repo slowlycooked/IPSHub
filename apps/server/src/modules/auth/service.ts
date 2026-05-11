@@ -19,7 +19,7 @@ export interface AuthUser {
 
 export function loginUser(username: string, password: string): AuthUser | null {
   const db = getDatabase();
-  const user = db.users.getByUsername(username);
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
 
   if (!user) {
     logger.warn(`Login attempt for non-existent user: ${username}`);

@@ -12,12 +12,12 @@ export interface Provider {
   user_agent?: string;
   request_headers_json?: string;
   provider_prefix?: string;
-  last_refresh_at?: string;
-  last_success_at?: string;
+  last_refresh_at?: number;
+  last_success_at?: number;
   last_error?: string;
   last_node_count: number;
-  created_at: string;
-  updated_at: string;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface ProviderInput {

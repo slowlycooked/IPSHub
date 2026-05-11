@@ -40,7 +40,6 @@ cd apps/server && pnpm dev
 
 前端：http://localhost:5173
 后端：http://localhost:8080
-API 文档：http://localhost:8080/api/docs
 
 ### Docker 部署
 
@@ -75,16 +74,16 @@ docker-compose up -d
 
 ### 环境变量
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `NODE_ENV` | 运行环境 | `development` |
-| `LOG_LEVEL` | 日志级别 | `debug` |
-| `APP_BASE_URL` | 应用地址 | `http://localhost:8088` |
-| `APP_SECRET` | 加密密钥 | - |
-| `ADMIN_USERNAME` | 初始管理员用户名 | - |
-| `ADMIN_PASSWORD` | 初始管理员密码 | - |
-| `DB_PATH` | 数据库路径 | `./data/ipshub.db` |
-| `SERVER_PORT` | 服务器端口 | `8080` |
+| 变量 | 说明 | 必需 | 默认值 |
+|------|------|------|--------|
+| `NODE_ENV` | 运行环境 | 否 | `development` |
+| `LOG_LEVEL` | 日志级别 | 否 | `debug` |
+| `APP_BASE_URL` | 应用地址 | 否 | `http://localhost:8088` |
+| `APP_SECRET` | 应用加密密钥（生产环境必须修改） | 是 | 无默认值 |
+| `COOKIE_SECURE` | Cookie 安全标志（HTTP 时设为 false） | 否 | false |
+| `ADMIN_USERNAME` | 初始管理员用户名 | 否 | `admin` |
+| `ADMIN_PASSWORD` | 初始管理员密码 | 否 | 无默认值 |
+| `SERVER_PORT` | 服务器端口 | 否 | `8080` |
 
 ## 使用指南
 

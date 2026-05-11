@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { profilesApi, type ProfilePayload } from '@/api/profiles';
 import { queryClient } from '@/api/queryClient';
-import type { Profile, ProfileUrls } from '@/types/profile';
+import type { OutputType, Profile, ProfileUrls } from '@/types/profile';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -11,64 +11,61 @@ import { CopyButton } from '@/components/ui/CopyButton';
 import { DataTable } from '@/components/ui/DataTable';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { JsonTextarea } from '@/components/ui/JsonTextarea';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Modal } from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, truncate } from '@/utils/format';
 
-const defaultFilterJson = JSON.stringify(
-  {
-    includeProviders: [],
-    excludeProviders: [],
-    includeNameRegex: [],
-    excludeNameRegex: ['过期', '剩余', 'Traffic', 'Expire'],
-    includeProtocols: [],
-    excludeProtocols: [],
-    onlyEnabled: true,
-  },
-  null,
-  2
-);
-
 interface FormState {
   name: string;
   description: string;
-  enabled: boolean;
-  output_type: 'clash' | 'mihomo' | 'loon' | 'raw';
-  rename_template: string;
-  filter_json: string;
+  output_format: OutputType;
+  include_protocols: string;
+  exclude_keywords: string;
+}
+
+interface IssuedTokenState {
+  name: string;
+  token: string;
 }
 
 const defaultForm: FormState = {
   name: '',
   description: '',
-  enabled: true,
-  output_type: 'clash',
-  rename_template: '',
-  filter_json: defaultFilterJson,
+  output_format: 'clash',
+  include_protocols: '',
+  exclude_keywords: '过期,剩余,Traffic,Expire',
 };
 
-function profileUrls(profile: Profile): ProfileUrls {
-  const token = profile.token || profile.id;
-  const origin = window.location.origin;
-  return {
-    clash: `${origin}/subscribe/clash/${token}`,
-    loon: `${origin}/subscribe/loon/${token}`,
-    raw: `${origin}/subscribe/raw/${token}`,
-    provider: `${origin}/subscribe/provider/${token}`,
-  };
+function splitCsv(value: string): string[] | undefined {
+  const items = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return items.length > 0 ? items : undefined;
 }
 
 function toPayload(form: FormState): ProfilePayload {
   return {
     name: form.name,
     description: form.description || undefined,
-    enabled: form.enabled,
-    output_type: form.output_type,
-    rename_template: form.rename_template || undefined,
-    filter_json: form.filter_json,
+    output_format: form.output_format,
+    include_protocols: splitCsv(form.include_protocols),
+    exclude_keywords: splitCsv(form.exclude_keywords),
+  };
+}
+
+function buildProfileUrls(name: string, token: string): ProfileUrls {
+  const origin = window.location.origin;
+  const encodedName = encodeURIComponent(name);
+
+  return {
+    clash: `${origin}/sub/clash/${encodedName}?token=${token}`,
+    loon: `${origin}/sub/loon/${encodedName}?token=${token}`,
+    raw: `${origin}/sub/raw/${encodedName}?token=${token}`,
+    provider: `${origin}/sub/provider/${encodedName}?token=${token}`,
   };
 }
 
@@ -78,7 +75,7 @@ export function ProfilesPage() {
   const [openForm, setOpenForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
   const [regenerateTarget, setRegenerateTarget] = useState<Profile | null>(null);
-  const [jsonValid, setJsonValid] = useState(true);
+  const [issuedToken, setIssuedToken] = useState<IssuedTokenState | null>(null);
   const [form, setForm] = useState<FormState>(defaultForm);
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -96,10 +93,15 @@ export function ProfilesPage() {
 
   const createMutation = useMutation({
     mutationFn: (payload: ProfilePayload) => profilesApi.create(payload),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       pushToast('Profile created', 'success');
       setOpenForm(false);
+
+      if (data.profile.token) {
+        setIssuedToken({ name: data.profile.name, token: data.profile.token });
+      }
     },
   });
 
@@ -108,6 +110,7 @@ export function ProfilesPage() {
       profilesApi.update(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       pushToast('Profile updated', 'success');
       setOpenForm(false);
       setSelected(null);
@@ -118,6 +121,7 @@ export function ProfilesPage() {
     mutationFn: (id: string) => profilesApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       pushToast('Profile deleted', 'success');
       setDeleteTarget(null);
     },
@@ -125,10 +129,14 @@ export function ProfilesPage() {
 
   const regenerateMutation = useMutation({
     mutationFn: (id: string) => profilesApi.regenerateToken(id),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['profiles'] });
       pushToast('Token regenerated', 'success');
       setRegenerateTarget(null);
+
+      if (data.profile.token) {
+        setIssuedToken({ name: data.profile.name, token: data.profile.token });
+      }
     },
   });
 
@@ -143,10 +151,9 @@ export function ProfilesPage() {
     setForm({
       name: profile.name,
       description: profile.description || '',
-      enabled: profile.enabled,
-      output_type: profile.output_type,
-      rename_template: profile.rename_template || '',
-      filter_json: profile.filter_json || defaultFilterJson,
+      output_format: profile.output_format,
+      include_protocols: profile.include_protocols?.join(', ') || '',
+      exclude_keywords: profile.exclude_keywords?.join(', ') || '',
     });
     setOpenForm(true);
   };
@@ -156,14 +163,12 @@ export function ProfilesPage() {
       pushToast('Profile name is required', 'error');
       return;
     }
-    if (!jsonValid) {
-      pushToast('Please fix JSON format', 'error');
-      return;
-    }
+
     if (selected) {
       updateMutation.mutate({ id: selected.id, payload: toPayload(form) });
       return;
     }
+
     createMutation.mutate(toPayload(form));
   };
 
@@ -175,11 +180,13 @@ export function ProfilesPage() {
     return <ErrorState message="Failed to load profiles." onRetry={() => refetch()} />;
   }
 
+  const issuedUrls = issuedToken ? buildProfileUrls(issuedToken.name, issuedToken.token) : null;
+
   return (
     <div>
       <PageHeader
         title="Profiles"
-        description="Manage output profiles and subscription URLs."
+        description="Manage output profiles, filtering rules and token-based subscription endpoints."
         actions={
           <Button variant="primary" onClick={openCreate}>
             Add Profile
@@ -192,71 +199,42 @@ export function ProfilesPage() {
       ) : (
         <Card>
           <DataTable
-            headers={[
-              'Name',
-              'Output Type',
-              'Enabled',
-              'Filter Summary',
-              'Subscription URLs',
-              'Updated At',
-              'Actions',
-            ]}
+            headers={['Name', 'Output', 'Protocols', 'Exclude Keywords', 'Access Count', 'Updated At', 'Actions']}
           >
-            {profiles.map((profile) => {
-              const urls = profileUrls(profile);
-              return (
-                <tr key={profile.id} className="border-b border-slate-100 text-sm hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-text">{profile.name}</td>
-                  <td className="px-4 py-3">{profile.output_type}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge tone={profile.enabled ? 'success' : 'neutral'}>
-                      {profile.enabled ? 'Enabled' : 'Disabled'}
-                    </StatusBadge>
-                  </td>
-                  <td className="max-w-[180px] px-4 py-3" title={profile.filter_json || ''}>
-                    {truncate(profile.filter_json || '', 36)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-[56px] text-slate-500">Clash</span>
-                        <span className="max-w-[180px] truncate font-mono" title={urls.clash}>{urls.clash}</span>
-                        <CopyButton text={urls.clash} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-[56px] text-slate-500">Loon</span>
-                        <span className="max-w-[180px] truncate font-mono" title={urls.loon}>{urls.loon}</span>
-                        <CopyButton text={urls.loon} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-[56px] text-slate-500">Raw</span>
-                        <span className="max-w-[180px] truncate font-mono" title={urls.raw}>{urls.raw}</span>
-                        <CopyButton text={urls.raw} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-[56px] text-slate-500">Provider</span>
-                        <span className="max-w-[180px] truncate font-mono" title={urls.provider}>{urls.provider}</span>
-                        <CopyButton text={urls.provider} />
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{formatDateTime(profile.updated_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button variant="secondary" size="sm" onClick={() => openEdit(profile)}>
-                        Edit
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setRegenerateTarget(profile)}>
-                        Regenerate Token
-                      </Button>
-                      <Button variant="danger" size="sm" onClick={() => setDeleteTarget(profile)}>
-                        Delete
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+            {profiles.map((profile) => (
+              <tr key={profile.id} className="border-b border-line/60 text-sm text-text-muted hover:bg-white/[0.03]">
+                <td className="px-4 py-3">
+                  <div>
+                    <div className="font-medium text-text">{profile.name}</div>
+                    <div className="mt-1 text-xs text-text-dim">{truncate(profile.description, 46)}</div>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <StatusBadge tone="primary">{profile.output_format}</StatusBadge>
+                </td>
+                <td className="max-w-[180px] px-4 py-3" title={profile.include_protocols?.join(', ') || ''}>
+                  {truncate(profile.include_protocols?.join(', '), 32)}
+                </td>
+                <td className="max-w-[220px] px-4 py-3" title={profile.exclude_keywords?.join(', ') || ''}>
+                  {truncate(profile.exclude_keywords?.join(', '), 40)}
+                </td>
+                <td className="px-4 py-3">{profile.access_count}</td>
+                <td className="px-4 py-3">{formatDateTime(profile.updated_at)}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => openEdit(profile)}>
+                      Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setRegenerateTarget(profile)}>
+                      Regenerate Token
+                    </Button>
+                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(profile)}>
+                      Delete
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
           </DataTable>
         </Card>
       )}
@@ -283,7 +261,7 @@ export function ProfilesPage() {
       >
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm text-slate-700">Name</label>
+            <label className="mb-1 block text-sm text-text-muted">Name</label>
             <input
               className="ip-input"
               value={form.name}
@@ -291,94 +269,105 @@ export function ProfilesPage() {
             />
           </div>
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm text-slate-700">Description</label>
+            <label className="mb-1 block text-sm text-text-muted">Description</label>
             <input
               className="ip-input"
               value={form.description}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, description: event.target.value }))
-              }
+              onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm text-slate-700">Output Type</label>
+            <label className="mb-1 block text-sm text-text-muted">Output Format</label>
             <select
               className="ip-input"
-              value={form.output_type}
+              value={form.output_format}
               onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  output_type: event.target.value as FormState['output_type'],
-                }))
+                setForm((prev) => ({ ...prev, output_format: event.target.value as OutputType }))
               }
             >
               <option value="clash">clash</option>
-              <option value="mihomo">mihomo</option>
+              <option value="clash_provider">clash_provider</option>
               <option value="loon">loon</option>
               <option value="raw">raw</option>
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm text-slate-700">Enabled</label>
-            <select
-              className="ip-input"
-              value={form.enabled ? 'true' : 'false'}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, enabled: event.target.value === 'true' }))
-              }
-            >
-              <option value="true">Enabled</option>
-              <option value="false">Disabled</option>
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm text-slate-700">Rename Template</label>
+            <label className="mb-1 block text-sm text-text-muted">Include Protocols</label>
             <input
               className="ip-input"
-              value={form.rename_template}
+              placeholder="ss, vmess, trojan"
+              value={form.include_protocols}
               onChange={(event) =>
-                setForm((prev) => ({ ...prev, rename_template: event.target.value }))
+                setForm((prev) => ({ ...prev, include_protocols: event.target.value }))
               }
             />
           </div>
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm text-slate-700">Filter JSON</label>
-            <JsonTextarea
-              value={form.filter_json}
-              onChange={(value) => setForm((prev) => ({ ...prev, filter_json: value }))}
-              onValidityChange={setJsonValid}
+            <label className="mb-1 block text-sm text-text-muted">Exclude Keywords</label>
+            <input
+              className="ip-input"
+              placeholder="过期, 剩余, Traffic"
+              value={form.exclude_keywords}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, exclude_keywords: event.target.value }))
+              }
             />
           </div>
         </div>
       </Modal>
 
-      <ConfirmDialog
-        open={Boolean(regenerateTarget)}
-        title="Regenerate Token"
-        description="This action rotates subscription token and invalidates old URLs. Continue?"
-        confirmText="Regenerate"
-        loading={regenerateMutation.isPending}
-        onConfirm={() => {
-          if (regenerateTarget) {
-            regenerateMutation.mutate(regenerateTarget.id);
-          }
-        }}
-        onCancel={() => setRegenerateTarget(null)}
-      />
+      <Modal
+        open={Boolean(issuedToken && issuedUrls)}
+        title="Issued Subscription Token"
+        onClose={() => setIssuedToken(null)}
+        widthClassName="max-w-3xl"
+      >
+        {issuedToken && issuedUrls ? (
+          <div className="space-y-4">
+            <p className="text-sm text-text-muted">
+              This token is only shown when it is created or regenerated. Copy the URLs you need now.
+            </p>
+            <div className="rounded-2xl border border-line bg-black/20 p-4">
+              <div className="flex items-center gap-2 text-sm text-text">
+                <span className="font-medium">Token</span>
+                <span className="font-mono text-xs text-text-muted">{issuedToken.token}</span>
+                <CopyButton text={issuedToken.token} />
+              </div>
+            </div>
+            {Object.entries(issuedUrls).map(([key, value]) => (
+              <div key={key} className="rounded-2xl border border-line bg-black/20 p-4">
+                <div className="flex items-center gap-2">
+                  <span className="w-[80px] text-sm font-medium capitalize text-text">{key}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-muted" title={value}>
+                    {value}
+                  </span>
+                  <CopyButton text={value} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </Modal>
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete Profile"
-        description="This action cannot be undone. Delete this profile?"
+        description={`Delete ${deleteTarget?.name || 'this profile'}? Existing subscription links will stop working.`}
         confirmText="Delete"
         danger
         loading={deleteMutation.isPending}
-        onConfirm={() => {
-          if (deleteTarget) {
-            deleteMutation.mutate(deleteTarget.id);
-          }
-        }}
         onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(regenerateTarget)}
+        title="Regenerate Token"
+        description={`Regenerate the token for ${regenerateTarget?.name || 'this profile'}? Existing URLs will become invalid immediately.`}
+        confirmText="Regenerate"
+        loading={regenerateMutation.isPending}
+        onCancel={() => setRegenerateTarget(null)}
+        onConfirm={() => regenerateTarget && regenerateMutation.mutate(regenerateTarget.id)}
       />
     </div>
   );

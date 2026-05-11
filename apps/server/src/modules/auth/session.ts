@@ -18,9 +18,10 @@ const sessions = new Map<string, UserSession>();
 
 export async function setAuthCookie(reply: FastifyReply, sessionId: string, session: UserSession): Promise<void> {
   sessions.set(sessionId, session);
+  const isSecure = process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production';
   reply.cookie('sessionId', sessionId, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isSecure,
     sameSite: 'lax',
     path: '/',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days

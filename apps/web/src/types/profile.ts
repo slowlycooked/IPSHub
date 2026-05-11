@@ -1,26 +1,17 @@
-export type OutputType = 'clash' | 'mihomo' | 'loon' | 'raw';
-
-export interface ProfileFilter {
-  includeProviders: string[];
-  excludeProviders: string[];
-  includeNameRegex: string[];
-  excludeNameRegex: string[];
-  includeProtocols: string[];
-  excludeProtocols: string[];
-  onlyEnabled: boolean;
-}
+export type OutputType = 'clash' | 'clash_provider' | 'loon' | 'raw';
 
 export interface Profile {
   id: string;
   name: string;
   description?: string;
-  enabled: boolean;
-  output_type: OutputType;
-  rename_template?: string;
-  filter_json?: string;
+  output_format: OutputType;
+  include_protocols?: string[];
+  exclude_keywords?: string[];
+  access_count: number;
+  last_accessed_at?: number;
   token?: string;
-  updated_at: string;
-  created_at: string;
+  updated_at: number;
+  created_at: number;
 }
 
 export interface ProfileUrls {
