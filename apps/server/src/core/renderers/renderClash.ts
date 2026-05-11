@@ -1,24 +1,35 @@
 import { ProxyNode } from '@/types/proxy';
 import { stringify as stringifyYaml } from 'yaml';
 
+const CLASH_SUPPORTED_PROTOCOLS = new Set(['ss', 'vmess', 'trojan', 'socks5', 'http']);
+
 /**
  * 将节点渲染为 Clash YAML 格式
  */
 export function renderClash(nodes: ProxyNode[]): string {
-  const proxies = nodes.map(nodeToClashProxy);
+  const clashNodes = nodes.filter((node) => CLASH_SUPPORTED_PROTOCOLS.has(node.protocol));
+  const proxies = clashNodes.map(nodeToClashProxy);
+  const proxyNames = clashNodes.map((n) => n.name);
+  const groupProxyNames = proxyNames.length > 0 ? [...proxyNames, 'DIRECT'] : ['DIRECT'];
 
   const config = {
+    port: 7890,
+    'socks-port': 7891,
+    'allow-lan': false,
+    mode: 'rule',
+    'log-level': 'info',
+    'external-controller': '127.0.0.1:9090',
     proxies,
     'proxy-groups': [
       {
         name: 'Proxy',
         type: 'select',
-        proxies: nodes.map(n => n.name),
+        proxies: groupProxyNames,
       },
       {
         name: 'Auto Select',
         type: 'url-test',
-        proxies: nodes.map(n => n.name),
+        proxies: proxyNames.length > 0 ? proxyNames : ['DIRECT'],
         url: 'https://www.gstatic.com/generate_204',
         interval: 300,
       },
@@ -45,49 +56,39 @@ function nodeToClashProxy(node: ProxyNode): any {
     case 'ss':
       proxy.cipher = node.cipher || 'aes-256-gcm';
       proxy.password = node.password;
-      if (node.udpRelay !== undefined) {
-        proxy['udp'] = node.udpRelay;
-      }
+      proxy.udp = node.udpRelay ?? true;
       break;
 
     case 'vmess':
       proxy.uuid = node.uuid;
       proxy.alterId = node.alterId || 0;
       proxy.cipher = 'auto';
+      proxy.udp = true;
       if (node.tls) {
         proxy.tls = true;
-        proxy['tls-hostname'] = node.host || '';
+        if (node.host) {
+          proxy.servername = node.host;
+        }
       }
       if (node.transport && node.transport !== 'tcp') {
         proxy.network = node.transport;
-        if (node.host) proxy.host = node.host;
-        if (node.path) proxy.path = node.path;
+        if (node.transport === 'ws') {
+          proxy['ws-opts'] = {
+            path: node.path || '/',
+            headers: node.host ? { Host: node.host } : {},
+          };
+        }
       }
       break;
 
     case 'trojan':
       proxy.password = node.password;
+      proxy.udp = true;
       if (node.host) {
-        proxy['sni'] = node.host;
+        proxy.sni = node.host;
       }
       if (node.allowInsecure) {
         proxy['skip-cert-verify'] = true;
-      }
-      break;
-
-    case 'vless':
-      proxy.uuid = node.uuid;
-      if (node.tls) {
-        proxy.tls = true;
-      }
-      if (node.transport) {
-        proxy.network = node.transport;
-      }
-      if (node.host) {
-        proxy['tls-hostname'] = node.host;
-      }
-      if (node.path) {
-        proxy.path = node.path;
       }
       break;
 

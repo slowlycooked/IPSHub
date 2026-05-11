@@ -8,13 +8,16 @@ function emitApiError(message: string): void {
 }
 
 async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+  const hasBody = body !== undefined;
   const response = await fetch(path, {
     method,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: hasBody
+      ? {
+          'Content-Type': 'application/json',
+        }
+      : undefined,
+    body: hasBody ? JSON.stringify(body) : undefined,
   });
 
   let payload: ApiResponse<T> | null = null;

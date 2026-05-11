@@ -1,25 +1,25 @@
 ---
-name: Dashboard
+name: Enterprise
 colors:
-  primary: "#0C5CAB"
-  secondary: "#0a4a8a"
-  success: "#10b981"
-  warning: "#f59e0b"
-  danger: "#ef4444"
-  surface: "#09090b"
-  text: "#fafafa"
-  neutral: "#09090b"
+  primary: "#072C2C"
+  secondary: "#FF5F03"
+  success: "#16A34A"
+  warning: "#D97706"
+  danger: "#DC2626"
+  surface: "#EDEADE"
+  text: "#111827"
+  neutral: "#EDEADE"
 typography:
   h1:
-    fontFamily: "IBM Plex Sans"
-    fontSize: 2rem
+    fontFamily: "Oswald"
+    fontSize: 3rem
   body-md:
-    fontFamily: "IBM Plex Sans"
+    fontFamily: "Ubuntu"
     fontSize: 1rem
   label-caps:
-    fontFamily: "IBM Plex Sans"
+    fontFamily: "Ubuntu Mono"
     fontSize: 0.75rem
-  sourceScale: "12/14/16/20/24/32"
+  sourceScale: "desktop-first expressive scale"
   weights: "100, 200, 300, 400, 500, 600, 700, 800, 900"
 rounded:
   sm: 4px
@@ -27,29 +27,29 @@ rounded:
 spacing:
   sm: 8px
   md: 16px
-  sourceScale: "8pt baseline grid"
+  sourceScale: "comfortable density mode"
 ---
 
 ## Overview
 
-Dark-themed cloud-platform aesthetic with modular grids, glass-like panels, and strong data hierarchy for productivity dashboards.
+Clean, high-contrast enterprise design for data-driven workflows with intuitive drag-and-drop patterns and structured layouts.
 
 ## Style Foundations
 
-- **Visual style:** modern, clean, cloud-platform aesthetic (Heroku/Vercel/GitHub inspired), dark theme, subtle gradients, soft shadows, glass-like panels, rounded components
-- **Typography scale:** 12/14/16/20/24/32
-- **Typography fonts:** primary=IBM Plex Sans, display=IBM Plex Sans, mono=IBM Plex Sans
+- **Visual style:** clean, high-contrast, enterprise
+- **Typography scale:** desktop-first expressive scale
+- **Typography fonts:** primary=Ubuntu, display=Oswald, mono=Ubuntu Mono
 - **Typography weights:** 100, 200, 300, 400, 500, 600, 700, 800, 900
-- **Color palette:** primary, neutral, success, warning, danger
-- **Spacing scale:** 8pt baseline grid
+- **Color palette:** primary, success, warning, danger
+- **Spacing scale:** comfortable density mode
 
 ## Colors
 
-- **Primary (#0C5CAB):** Token from style foundations.
-- **Secondary (#0a4a8a):** Token from style foundations.
-- **Success (#10b981):** Token from style foundations.
-- **Warning (#f59e0b):** Token from style foundations.
-- **Danger (#ef4444):** Token from style foundations.
-- **Surface (#09090b):** Token from style foundations.
-- **Text (#fafafa):** Token from style foundations.
-- **Neutral (#09090b):** Derived from the surface token for official format compatibility.
+- **Primary (#072C2C):** Token from style foundations.
+- **Secondary (#FF5F03):** Token from style foundations.
+- **Success (#16A34A):** Token from style foundations.
+- **Warning (#D97706):** Token from style foundations.
+- **Danger (#DC2626):** Token from style foundations.
+- **Surface (#EDEADE):** Token from style foundations.
+- **Text (#111827):** Token from style foundations.
+- **Neutral (#EDEADE):** Derived from the surface token for official format compatibility.

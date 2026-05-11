@@ -54,19 +54,25 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         const { token } = request.query;
 
         if (!token) {
-          return reply.status(401).send({ error: 'Missing token' });
+          reply.status(401);
+          reply.type('application/json');
+          return { error: 'Missing token' };
         }
 
         // 验证 token
         const validation = validateToken(token);
         if (!validation) {
-          return reply.status(401).send({ error: 'Invalid token' });
+          reply.status(401);
+          reply.type('application/json');
+          return { error: 'Invalid token' };
         }
 
         // 获取 profile
         const result = getProfileNodes(validation.id, validation.userId);
         if (!result) {
-          return reply.status(404).send({ error: 'Profile not found' });
+          reply.status(404);
+          reply.type('application/json');
+          return { error: 'Profile not found' };
         }
 
         // 记录访问
@@ -75,12 +81,14 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         // 生成 Clash YAML
         const content = renderClash(result.nodes);
 
-        reply.header('Content-Type', 'application/yaml');
+        reply.type('application/yaml');
         reply.header('Content-Disposition', `attachment; filename="${result.profile.name}.yaml"`);
         return content;
       } catch (error) {
         logger.error('Clash subscription error', error);
-        return reply.status(500).send({ error: 'Failed to generate subscription' });
+        reply.status(500);
+        reply.type('application/json');
+        return { error: 'Failed to generate subscription' };
       }
     }
   );
@@ -96,29 +104,37 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         const { token } = request.query;
 
         if (!token) {
-          return reply.status(401).send({ error: 'Missing token' });
+          reply.status(401);
+          reply.type('application/json');
+          return { error: 'Missing token' };
         }
 
         const validation = validateToken(token);
         if (!validation) {
-          return reply.status(401).send({ error: 'Invalid token' });
+          reply.status(401);
+          reply.type('application/json');
+          return { error: 'Invalid token' };
         }
 
         const result = getProfileNodes(validation.id, validation.userId);
         if (!result) {
-          return reply.status(404).send({ error: 'Profile not found' });
+          reply.status(404);
+          reply.type('application/json');
+          return { error: 'Profile not found' };
         }
 
         recordAccess(validation.id, request.ip, request.headers['user-agent']);
 
         const content = renderLoon(result.nodes);
 
-        reply.header('Content-Type', 'text/plain');
+        reply.type('text/plain');
         reply.header('Content-Disposition', `attachment; filename="${result.profile.name}.txt"`);
         return content;
       } catch (error) {
         logger.error('Loon subscription error', error);
-        return reply.status(500).send({ error: 'Failed to generate subscription' });
+        reply.status(500);
+        reply.type('application/json');
+        return { error: 'Failed to generate subscription' };
       }
     }
   );
@@ -134,29 +150,37 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         const { token } = request.query;
 
         if (!token) {
-          return reply.status(401).send({ error: 'Missing token' });
+          reply.status(401);
+          reply.type('application/json');
+          return { error: 'Missing token' };
         }
 
         const validation = validateToken(token);
         if (!validation) {
-          return reply.status(401).send({ error: 'Invalid token' });
+          reply.status(401);
+          reply.type('application/json');
+          return { error: 'Invalid token' };
         }
 
         const result = getProfileNodes(validation.id, validation.userId);
         if (!result) {
-          return reply.status(404).send({ error: 'Profile not found' });
+          reply.status(404);
+          reply.type('application/json');
+          return { error: 'Profile not found' };
         }
 
         recordAccess(validation.id, request.ip, request.headers['user-agent']);
 
         const content = renderRaw(result.nodes);
 
-        reply.header('Content-Type', 'text/plain');
+        reply.type('text/plain');
         reply.header('Content-Disposition', `attachment; filename="${result.profile.name}.txt"`);
         return content;
       } catch (error) {
         logger.error('Raw subscription error', error);
-        return reply.status(500).send({ error: 'Failed to generate subscription' });
+        reply.status(500);
+        reply.type('application/json');
+        return { error: 'Failed to generate subscription' };
       }
     }
   );
@@ -172,29 +196,37 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         const { token } = request.query;
 
         if (!token) {
-          return reply.status(401).send({ error: 'Missing token' });
+          reply.status(401);
+          reply.type('application/json');
+          return { error: 'Missing token' };
         }
 
         const validation = validateToken(token);
         if (!validation) {
-          return reply.status(401).send({ error: 'Invalid token' });
+          reply.status(401);
+          reply.type('application/json');
+          return { error: 'Invalid token' };
         }
 
         const result = getProfileNodes(validation.id, validation.userId);
         if (!result) {
-          return reply.status(404).send({ error: 'Profile not found' });
+          reply.status(404);
+          reply.type('application/json');
+          return { error: 'Profile not found' };
         }
 
         recordAccess(validation.id, request.ip, request.headers['user-agent']);
 
         const content = renderProvider(result.nodes);
 
-        reply.header('Content-Type', 'application/yaml');
+        reply.type('application/yaml');
         reply.header('Content-Disposition', `attachment; filename="${result.profile.name}-provider.yaml"`);
         return content;
       } catch (error) {
         logger.error('Provider subscription error', error);
-        return reply.status(500).send({ error: 'Failed to generate subscription' });
+        reply.status(500);
+        reply.type('application/json');
+        return { error: 'Failed to generate subscription' };
       }
     }
   );

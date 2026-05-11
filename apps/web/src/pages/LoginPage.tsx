@@ -29,17 +29,17 @@ export function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-app px-4 py-10">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(56,105,255,0.25),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(12,191,163,0.18),transparent_25%)]" />
-      <Card className="relative w-full max-w-md p-8">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-surface px-4 py-10">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(7,44,44,0.06),transparent_45%),radial-gradient(circle_at_80%_20%,rgba(255,95,3,0.08),transparent_28%)]" />
+      <Card className="relative w-full max-w-md p-8 shadow-lg">
         <div className="mb-8 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-text-dim">Secure Control Plane</p>
-          <h1 className="mb-2 mt-3 text-3xl font-semibold text-text">IPSHub</h1>
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.22em] text-text-dim">Secure Control Plane</p>
+          <h1 className="mb-2 mt-3 font-display text-4xl font-semibold tracking-wide text-primary">IPSHub</h1>
           <p className="text-sm text-text-muted">Sign in to manage providers, nodes, profiles and refresh jobs.</p>
         </div>
 
         {error && (
-          <div className="mb-6 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div className="mb-6 rounded-md border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
             {error}
           </div>
         )}

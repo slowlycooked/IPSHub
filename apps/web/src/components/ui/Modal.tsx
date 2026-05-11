@@ -22,16 +22,23 @@ export function Modal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-      <div className={`w-full ${widthClassName} rounded-[28px] border border-line bg-panel-strong shadow-[0_28px_90px_rgba(0,0,0,0.4)]`}>
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <h3 className="text-base font-semibold text-text">{title}</h3>
-          <button type="button" onClick={onClose} className="text-sm text-text-muted hover:text-text">
-            Close
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-4 backdrop-blur-sm">
+      <div className={`w-full ${widthClassName} rounded-md border border-line bg-white shadow-xl`}>
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
+          <h3 className="font-display text-lg font-semibold text-primary tracking-wide">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-text-dim hover:text-text hover:bg-primary/5 transition-colors"
+            aria-label="Close modal"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
-        {footer ? <div className="border-t border-line px-5 py-4">{footer}</div> : null}
+        <div className="max-h-[calc(100vh-200px)] overflow-y-auto px-6 py-5">{children}</div>
+        {footer && <div className="border-t border-line px-6 py-4 bg-surface-1">{footer}</div>}
       </div>
     </div>
   );

@@ -28,83 +28,202 @@ export function DashboardView() {
   }
 
   const stats = data.stats;
+  const hasErrors = data.recentRefreshes?.some(job => job.status === 'failed');
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
-        description="Overview of providers, nodes, profiles, and recent system activities."
+        description="System health overview and recent subscription aggregation activities."
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Providers" value={stats.totalProviders} hint="Total providers" onClick={() => navigate('/providers')} />
-        <StatCard label="Enabled Providers" value={stats.enabledProviders} hint="Currently active" status="success" onClick={() => navigate('/providers')} />
-        <StatCard label="Nodes" value={stats.totalNodes} hint={`${stats.enabledNodes} enabled nodes`} onClick={() => navigate('/nodes')} />
-        <StatCard label="Profiles" value={stats.totalProfiles} hint={stats.latestRefreshAt ? `Last refresh ${formatDateTime(stats.latestRefreshAt)}` : 'No refresh yet'} onClick={() => navigate('/profiles')} />
+      {/* System Status Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <StatCard 
+          label="System Health" 
+          value={hasErrors ? 'Warning' : 'Healthy'} 
+          status={hasErrors ? 'warning' : 'success'}
+          hint={`${stats.enabledProviders} / ${stats.totalProviders} providers active`}
+        />
+        <StatCard 
+          label="Providers" 
+          value={stats.totalProviders} 
+          hint={`${stats.enabledProviders} enabled`}
+          status="primary"
+          onClick={() => navigate('/providers')} 
+        />
+        <StatCard 
+          label="Nodes" 
+          value={stats.totalNodes} 
+          hint={`${stats.enabledNodes} enabled`}
+          status="primary"
+          onClick={() => navigate('/nodes')} 
+        />
+        <StatCard 
+          label="Profiles" 
+          value={stats.totalProfiles} 
+          hint="Active profiles"
+          status="primary"
+          onClick={() => navigate('/profiles')} 
+        />
+        <StatCard 
+          label="Last Refresh" 
+          value={stats.latestRefreshAt ? new Date(stats.latestRefreshAt).toLocaleTimeString() : 'Never'} 
+          hint={stats.latestRefreshAt ? formatDateTime(stats.latestRefreshAt).split(' at ')[0] : 'No refresh yet'}
+          status="neutral"
+        />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card className="p-4">
-          <h3 className="mb-3 text-base font-semibold text-text">Recent Refresh Jobs</h3>
-          {data.recentRefreshes.length === 0 ? (
-            <EmptyState title="No refresh jobs" description="Refresh providers to generate job history." />
-          ) : (
-            <DataTable headers={['Provider', 'Status', 'Node Count', 'Updated At', 'Error']}>
-              {data.recentRefreshes.map((job) => (
-                <tr key={job.id} className="border-b border-line/60 text-sm text-text-muted hover:bg-white/[0.03]">
-                  <td className="px-4 py-3 text-text">{job.providerName}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge tone={job.status === 'success' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}>
-                      {job.status}
-                    </StatusBadge>
-                  </td>
-                  <td className="px-4 py-3">{job.nodeCount ?? '-'}</td>
-                  <td className="px-4 py-3">{formatDateTime(job.updatedAt)}</td>
-                  <td className="px-4 py-3" title={job.errorMessage}>{truncate(job.errorMessage, 42)}</td>
-                </tr>
-              ))}
-            </DataTable>
-          )}
+      {/* Subscription Pipeline */}
+      <Card className="mt-8 p-6">
+        <h3 className="font-display text-lg font-semibold text-primary mb-6">Subscription Pipeline</h3>
+        <div className="flex items-center justify-between gap-2 overflow-x-auto pb-4">
+          {[
+            { label: 'Providers', icon: '📥' },
+            { label: 'Fetch', icon: '⬇️' },
+            { label: 'Parse', icon: '🔍' },
+            { label: 'Merge', icon: '🔀' },
+            { label: 'Render', icon: '📄' },
+            { label: 'Client Access', icon: '✅' },
+          ].map((stage, idx) => (
+            <div key={idx} className="flex flex-col items-center gap-2 whitespace-nowrap">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-r from-primary to-primary-dark text-lg">
+                {stage.icon}
+              </div>
+              <p className="text-xs font-medium text-text-muted">{stage.label}</p>
+              {idx < 5 && (
+                <div className="absolute left-[calc(50%+2rem)] w-8 h-0.5 bg-gradient-to-r from-primary/50 to-transparent"></div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Main Content Grid */}
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Recent Refresh Jobs */}
+        <Card>
+          <div className="border-b border-line px-6 py-4">
+            <h3 className="font-display text-base font-semibold text-primary">Recent Refresh Jobs</h3>
+          </div>
+          <div className="overflow-hidden">
+            {data.recentRefreshes.length === 0 ? (
+              <div className="p-6">
+                <EmptyState 
+                  title="No refresh jobs" 
+                  description="Refresh providers to generate job history."
+                  action={{ label: 'Go to Providers', onClick: () => navigate('/providers') }}
+                />
+              </div>
+            ) : (
+              <DataTable headers={['Provider', 'Status', 'Nodes', 'Time', 'Message']}>
+                {data.recentRefreshes.map((job) => (
+                  <tr key={job.id} className="border-b border-line text-sm text-text-muted hover:bg-surface-1">
+                    <td className="px-4 py-3 text-text font-medium">{job.providerName}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge tone={job.status === 'success' ? 'success' : job.status === 'failed' ? 'danger' : 'warning'}>
+                        {job.status}
+                      </StatusBadge>
+                    </td>
+                    <td className="px-4 py-3">{job.nodeCount ?? '-'}</td>
+                    <td className="px-4 py-3 text-xs">{formatDateTime(job.updatedAt)}</td>
+                    <td className="px-4 py-3 text-xs" title={job.errorMessage}>{truncate(job.errorMessage, 30)}</td>
+                  </tr>
+                ))}
+              </DataTable>
+            )}
+          </div>
         </Card>
 
-        <Card className="p-4">
-          <h3 className="mb-3 text-base font-semibold text-text">Recent Access Logs</h3>
-          {data.recentAccessLogs.length === 0 ? (
-            <EmptyState title="No access logs" description="Subscription accesses will show up here." />
-          ) : (
-            <DataTable headers={['Profile', 'Output Type', 'Client IP', 'Status', 'Created At']}>
-              {data.recentAccessLogs.map((log) => (
-                <tr key={log.id} className="border-b border-line/60 text-sm text-text-muted hover:bg-white/[0.03]">
-                  <td className="px-4 py-3 text-text">{log.profileName}</td>
-                  <td className="px-4 py-3">{log.outputFormat}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{log.ipAddress || '-'}</td>
-                  <td className="px-4 py-3">{log.statusCode ?? '-'}</td>
-                  <td className="px-4 py-3">{formatDateTime(log.accessedAt)}</td>
-                </tr>
-              ))}
-            </DataTable>
-          )}
+        {/* Recent Access Logs */}
+        <Card>
+          <div className="border-b border-line px-6 py-4">
+            <h3 className="font-display text-base font-semibold text-primary">Recent Access Logs</h3>
+          </div>
+          <div className="overflow-hidden">
+            {data.recentAccessLogs.length === 0 ? (
+              <div className="p-6">
+                <EmptyState 
+                  title="No access logs" 
+                  description="Subscription accesses will show up here."
+                />
+              </div>
+            ) : (
+              <DataTable headers={['Profile', 'Format', 'Client IP', 'Code', 'Time']}>
+                {data.recentAccessLogs.map((log) => (
+                  <tr key={log.id} className="border-b border-line text-sm text-text-muted hover:bg-surface-1">
+                    <td className="px-4 py-3 text-text font-medium">{log.profileName}</td>
+                    <td className="px-4 py-3 text-xs">{log.outputFormat}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-primary">{log.ipAddress || '-'}</td>
+                    <td className="px-4 py-3 text-xs">
+                      <span className={`font-medium ${log.statusCode === 200 ? 'text-success' : 'text-warning'}`}>
+                        {log.statusCode ?? '-'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs">{formatDateTime(log.accessedAt)}</td>
+                  </tr>
+                ))}
+              </DataTable>
+            )}
+          </div>
         </Card>
       </div>
 
-      <div className="mt-6">
-        <Card className="p-4">
-          <h3 className="mb-3 text-base font-semibold text-text">Top Profiles</h3>
+      {/* Top Profiles */}
+      <Card className="mt-6">
+        <div className="border-b border-line px-6 py-4">
+          <h3 className="font-display text-base font-semibold text-primary">Top Profiles by Access</h3>
+        </div>
+        <div className="overflow-hidden">
           {data.topProfiles.length === 0 ? (
-            <EmptyState title="No profile usage yet" description="Profile access activity will appear after subscriptions are consumed." />
+            <div className="p-6">
+              <EmptyState 
+                title="No profile usage yet" 
+                description="Profile access activity will appear after subscriptions are consumed."
+                action={{ label: 'Create Profile', onClick: () => navigate('/profiles') }}
+              />
+            </div>
           ) : (
             <DataTable headers={['Profile', 'Access Count', 'Last Accessed']}>
               {data.topProfiles.map((profile) => (
-                <tr key={profile.id} className="border-b border-line/60 text-sm text-text-muted hover:bg-white/[0.03]">
-                  <td className="px-4 py-3 text-text">{profile.name}</td>
-                  <td className="px-4 py-3">{profile.access_count}</td>
-                  <td className="px-4 py-3">{formatDateTime(profile.last_accessed_at)}</td>
+                <tr key={profile.id} className="border-b border-line text-sm text-text-muted hover:bg-surface-1">
+                  <td className="px-4 py-3 text-text font-medium">{profile.name}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary/15 text-primary text-xs font-semibold">
+                      {profile.access_count} hits
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs">{formatDateTime(profile.last_accessed_at)}</td>
                 </tr>
               ))}
             </DataTable>
           )}
+        </div>
+      </Card>
+
+      {/* Recent Errors (if any) */}
+      {hasErrors && (
+        <Card className="mt-6 border-danger/40 bg-danger/5">
+          <div className="border-b border-danger/40 px-6 py-4">
+            <h3 className="text-base font-semibold text-red-200">Recent Errors</h3>
+          </div>
+          <div className="px-6 py-4">
+            <div className="space-y-2">
+              {data.recentRefreshes
+                .filter(job => job.status === 'failed' && job.errorMessage)
+                .map((job, idx) => (
+                  <div key={idx} className="flex gap-3 text-sm">
+                    <span className="flex-shrink-0 text-danger">⚠️</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-text-muted"><strong>{job.providerName}</strong> refresh failed</p>
+                      <p className="text-xs text-text-dim mt-1 truncate">{job.errorMessage}</p>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
         </Card>
-      </div>
+      )}
     </div>
   );
 }

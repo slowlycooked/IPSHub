@@ -11,6 +11,7 @@ import { DataTable } from '@/components/ui/DataTable';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { StatCard } from '@/components/ui/StatCard';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime } from '@/utils/format';
@@ -72,6 +73,15 @@ export function NodesPage() {
     });
   }, [nodes, keyword, providerFilter, protocolFilter, enabledFilter]);
 
+  const protocols = useMemo(() => [...new Set(nodes.map((n) => n.protocol))], [nodes]);
+
+  const stats = useMemo(() => ({
+    total: nodes.length,
+    enabled: nodes.filter(n => n.enabled).length,
+    disabled: nodes.filter(n => !n.enabled).length,
+    protocols: protocols.length,
+  }), [nodes, protocols]);
+
   if (isLoading) {
     return <LoadingState label="Loading nodes..." />;
   }
@@ -82,22 +92,34 @@ export function NodesPage() {
 
   return (
     <div>
-      <PageHeader title="Nodes" description="Search, filter and toggle node availability." />
+      <PageHeader 
+        title="Nodes" 
+        description="View and manage proxy nodes imported from providers."
+      />
 
-      <Card className="mb-4 p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Total Nodes" value={stats.total} hint="All nodes" status="primary" />
+        <StatCard label="Enabled" value={stats.enabled} hint="Active nodes" status="success" />
+        <StatCard label="Disabled" value={stats.disabled} hint="Inactive nodes" status={stats.disabled > 0 ? 'warning' : 'neutral'} />
+        <StatCard label="Protocols" value={stats.protocols} hint="Unique types" status="primary" />
+      </div>
+
+      {/* Filter Bar */}
+      <Card className="mt-6 p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <input
             className="ip-input"
-            placeholder="Search node name"
+            placeholder="Search node name..."
             value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            onChange={(e) => setKeyword(e.target.value)}
           />
           <select
             className="ip-input"
             value={providerFilter}
-            onChange={(event) => setProviderFilter(event.target.value)}
+            onChange={(e) => setProviderFilter(e.target.value)}
           >
-            <option value="all">All providers</option>
+            <option value="all">All Providers</option>
             {providers.map((provider) => (
               <option key={provider.id} value={provider.id}>
                 {provider.name}
@@ -107,10 +129,10 @@ export function NodesPage() {
           <select
             className="ip-input"
             value={protocolFilter}
-            onChange={(event) => setProtocolFilter(event.target.value)}
+            onChange={(e) => setProtocolFilter(e.target.value)}
           >
-            <option value="all">All protocols</option>
-            {[...new Set(nodes.map((node) => node.protocol))].map((protocol) => (
+            <option value="all">All Protocols</option>
+            {protocols.map((protocol) => (
               <option key={protocol} value={protocol}>
                 {protocol}
               </option>
@@ -119,38 +141,47 @@ export function NodesPage() {
           <select
             className="ip-input"
             value={enabledFilter}
-            onChange={(event) => setEnabledFilter(event.target.value)}
+            onChange={(e) => setEnabledFilter(e.target.value)}
           >
-            <option value="all">All status</option>
-            <option value="enabled">Enabled</option>
-            <option value="disabled">Disabled</option>
+            <option value="all">All Status</option>
+            <option value="enabled">Enabled Only</option>
+            <option value="disabled">Disabled Only</option>
           </select>
         </div>
       </Card>
 
+      {/* Nodes Table */}
       {filtered.length === 0 ? (
-        <EmptyState title="No nodes" description="No nodes found with current filters." />
+        <Card className="mt-6">
+          <div className="p-8">
+            <EmptyState 
+              title={nodes.length === 0 ? "No nodes yet" : "No results found"}
+              description={nodes.length === 0 ? "Import nodes by refreshing providers." : "Try adjusting your filters."}
+            />
+          </div>
+        </Card>
       ) : (
-        <Card>
+        <Card className="mt-6">
           <DataTable
-            headers={['Name', 'Provider', 'Protocol', 'Server', 'Port', 'Tag', 'Status', 'Updated At', 'Actions']}
+            headers={['Node', 'Provider', 'Protocol', 'Endpoint', 'Tag', 'Status', 'Updated', 'Actions']}
           >
             {filtered.map((node) => (
-              <tr key={node.id} className="border-b border-line/60 text-sm text-text-muted hover:bg-white/[0.03]">
-                <td className="px-4 py-3 text-text">{node.name}</td>
-                <td className="px-4 py-3">{providerNameMap.get(node.providerId) || node.providerId}</td>
+              <tr key={node.id} className="border-b border-line text-sm text-text-muted hover:bg-surface-1">
+                <td className="px-4 py-3 font-medium text-text">{node.name}</td>
+                <td className="px-4 py-3 text-xs">{providerNameMap.get(node.providerId) || node.providerId}</td>
                 <td className="px-4 py-3">
                   <StatusBadge tone="primary">{node.protocol}</StatusBadge>
                 </td>
-                <td className="px-4 py-3 font-mono text-xs">{node.server}</td>
-                <td className="px-4 py-3">{node.port}</td>
-                <td className="px-4 py-3">{node.tag || '-'}</td>
+                <td className="px-4 py-3 font-mono text-xs text-primary">
+                  {node.server}:{node.port}
+                </td>
+                <td className="px-4 py-3 text-xs max-w-xs truncate">{node.tag || '-'}</td>
                 <td className="px-4 py-3">
                   <StatusBadge tone={node.enabled ? 'success' : 'neutral'}>
                     {node.enabled ? 'Enabled' : 'Disabled'}
                   </StatusBadge>
                 </td>
-                <td className="px-4 py-3">{formatDateTime(node.updatedAt)}</td>
+                <td className="px-4 py-3 text-xs">{formatDateTime(node.updatedAt)}</td>
                 <td className="px-4 py-3">
                   <Button
                     variant={node.enabled ? 'secondary' : 'primary'}

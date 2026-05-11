@@ -31,17 +31,17 @@ export function ConfirmDialog({
       onClose={onCancel}
       widthClassName="max-w-xl"
       footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel}>
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={onCancel} size="md">
             {cancelText}
           </Button>
-          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} isLoading={loading}>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} isLoading={loading} size="md">
             {confirmText}
           </Button>
         </div>
       }
     >
-      <p className="text-sm text-slate-600">{description}</p>
+      <p className="text-sm text-text-muted leading-relaxed">{description}</p>
     </Modal>
   );
 }

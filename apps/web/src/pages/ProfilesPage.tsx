@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { CopyButton } from '@/components/ui/CopyButton';
-import { DataTable } from '@/components/ui/DataTable';
+import { Drawer } from '@/components/ui/Drawer';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -76,6 +76,7 @@ export function ProfilesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
   const [regenerateTarget, setRegenerateTarget] = useState<Profile | null>(null);
   const [issuedToken, setIssuedToken] = useState<IssuedTokenState | null>(null);
+  const [urlsModal, setUrlsModal] = useState<Profile | null>(null);
   const [form, setForm] = useState<FormState>(defaultForm);
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -186,66 +187,115 @@ export function ProfilesPage() {
     <div>
       <PageHeader
         title="Profiles"
-        description="Manage output profiles, filtering rules and token-based subscription endpoints."
+        description="Manage output profiles and token-based subscription endpoints."
         actions={
           <Button variant="primary" onClick={openCreate}>
-            Add Profile
+            + Add Profile
           </Button>
         }
       />
 
       {profiles.length === 0 ? (
-        <EmptyState title="No profiles" description="Create your first profile to generate subscription URLs." />
-      ) : (
-        <Card>
-          <DataTable
-            headers={['Name', 'Output', 'Protocols', 'Exclude Keywords', 'Access Count', 'Updated At', 'Actions']}
-          >
-            {profiles.map((profile) => (
-              <tr key={profile.id} className="border-b border-line/60 text-sm text-text-muted hover:bg-white/[0.03]">
-                <td className="px-4 py-3">
-                  <div>
-                    <div className="font-medium text-text">{profile.name}</div>
-                    <div className="mt-1 text-xs text-text-dim">{truncate(profile.description, 46)}</div>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge tone="primary">{profile.output_format}</StatusBadge>
-                </td>
-                <td className="max-w-[180px] px-4 py-3" title={profile.include_protocols?.join(', ') || ''}>
-                  {truncate(profile.include_protocols?.join(', '), 32)}
-                </td>
-                <td className="max-w-[220px] px-4 py-3" title={profile.exclude_keywords?.join(', ') || ''}>
-                  {truncate(profile.exclude_keywords?.join(', '), 40)}
-                </td>
-                <td className="px-4 py-3">{profile.access_count}</td>
-                <td className="px-4 py-3">{formatDateTime(profile.updated_at)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => openEdit(profile)}>
-                      Edit
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setRegenerateTarget(profile)}>
-                      Regenerate Token
-                    </Button>
-                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(profile)}>
-                      Delete
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </DataTable>
+        <Card className="mt-0">
+          <div className="p-8">
+            <EmptyState 
+              title="No profiles yet"
+              description="Create your first profile to generate subscription URLs."
+              action={{ label: 'Create Profile', onClick: openCreate }}
+            />
+          </div>
         </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {profiles.map((profile) => (
+            <Card key={profile.id} className="flex flex-col p-5">
+              {/* Header */}
+              <div className="mb-4 pb-4 border-b border-line">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <h3 className="font-display text-lg font-semibold text-primary flex-1 break-words">{profile.name}</h3>
+                  <StatusBadge tone="primary">{profile.output_format}</StatusBadge>
+                </div>
+                {profile.description && (
+                  <p className="text-sm text-text-dim">{truncate(profile.description, 80)}</p>
+                )}
+              </div>
+
+              {/* Info */}
+              <div className="space-y-3 mb-5 text-sm flex-1">
+                {profile.include_protocols && (
+                  <div>
+                    <p className="text-xs font-medium text-text-muted mb-1">Protocols</p>
+                    <p className="text-text">{profile.include_protocols.join(', ')}</p>
+                  </div>
+                )}
+                {profile.exclude_keywords && profile.exclude_keywords.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-text-muted mb-1">Exclude Keywords</p>
+                    <p className="text-text text-xs">{truncate(profile.exclude_keywords.join(', '), 60)}</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="rounded border border-line bg-surface-1 p-2">
+                    <p className="text-xs text-text-dim">Access Count</p>
+                    <p className="text-lg font-semibold text-primary">{profile.access_count}</p>
+                  </div>
+                  <div className="rounded border border-line bg-surface-1 p-2">
+                    <p className="text-xs text-text-dim">Updated</p>
+                    <p className="text-xs text-text-muted">{formatDateTime(profile.updated_at).split(' ')[0]}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="space-y-2">
+                <Button 
+                  variant="secondary" 
+                  size="md"
+                  className="w-full"
+                  onClick={() => setUrlsModal(profile)}
+                >
+                  View URLs
+                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    className="w-full"
+                    onClick={() => openEdit(profile)}
+                  >
+                    Edit
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setRegenerateTarget(profile)}
+                    title="Regenerate token - WARNING: existing URLs will expire"
+                  >
+                    Regen Token
+                  </Button>
+                </div>
+                <Button 
+                  variant="danger" 
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setDeleteTarget(profile)}
+                >
+                  Delete
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
 
-      <Modal
+      {/* Form Drawer */}
+      <Drawer
         open={openForm}
         title={selected ? 'Edit Profile' : 'Add Profile'}
         onClose={() => setOpenForm(false)}
-        widthClassName="max-w-2xl"
         footer={
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={() => setOpenForm(false)}>
               Cancel
             </Button>
@@ -254,105 +304,142 @@ export function ProfilesPage() {
               isLoading={createMutation.isPending || updateMutation.isPending}
               onClick={saveForm}
             >
-              Save
+              Save Profile
             </Button>
           </div>
         }
       >
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm text-text-muted">Name</label>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-muted mb-2">Name</label>
             <input
               className="ip-input"
               value={form.name}
-              onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+              onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g., Gaming, Work"
             />
           </div>
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm text-text-muted">Description</label>
+
+          <div>
+            <label className="block text-sm font-medium text-text-muted mb-2">Description</label>
             <input
               className="ip-input"
               value={form.description}
-              onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+              onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Optional profile description"
             />
           </div>
+
           <div>
-            <label className="mb-1 block text-sm text-text-muted">Output Format</label>
+            <label className="block text-sm font-medium text-text-muted mb-2">Output Format</label>
             <select
               className="ip-input"
               value={form.output_format}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, output_format: event.target.value as OutputType }))
-              }
+              onChange={(e) => setForm(prev => ({ ...prev, output_format: e.target.value as OutputType }))}
             >
-              <option value="clash">clash</option>
-              <option value="clash_provider">clash_provider</option>
-              <option value="loon">loon</option>
-              <option value="raw">raw</option>
+              <option value="clash">Clash YAML</option>
+              <option value="clash_provider">Clash Provider</option>
+              <option value="loon">Loon</option>
+              <option value="raw">Raw (Shadowsocks URI)</option>
             </select>
           </div>
+
           <div>
-            <label className="mb-1 block text-sm text-text-muted">Include Protocols</label>
+            <label className="block text-sm font-medium text-text-muted mb-2">Include Protocols</label>
             <input
               className="ip-input"
-              placeholder="ss, vmess, trojan"
+              placeholder="ss, vmess, trojan (comma-separated)"
               value={form.include_protocols}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, include_protocols: event.target.value }))
-              }
+              onChange={(e) => setForm(prev => ({ ...prev, include_protocols: e.target.value }))}
             />
           </div>
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm text-text-muted">Exclude Keywords</label>
+
+          <div>
+            <label className="block text-sm font-medium text-text-muted mb-2">Exclude Keywords</label>
             <input
               className="ip-input"
-              placeholder="过期, 剩余, Traffic"
+              placeholder="过期, 剩余, Traffic (comma-separated)"
               value={form.exclude_keywords}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, exclude_keywords: event.target.value }))
-              }
+              onChange={(e) => setForm(prev => ({ ...prev, exclude_keywords: e.target.value }))}
             />
           </div>
         </div>
+      </Drawer>
+
+      {/* URLs Modal */}
+      <Modal
+        open={Boolean(urlsModal)}
+        title={urlsModal ? `${urlsModal.name} - Subscription URLs` : 'Subscription URLs'}
+        onClose={() => setUrlsModal(null)}
+        widthClassName="max-w-2xl"
+      >
+        {urlsModal && (() => {
+          const urls = buildProfileUrls(urlsModal.name, urlsModal.token ?? '');
+          return (
+            <div className="space-y-4">
+              <div className="bg-surface-1 border border-line rounded-lg p-4 text-sm text-text-muted">
+                Copy the subscription URL for your proxy client. Each format has its own endpoint.
+              </div>
+              {Object.entries(urls).map(([key, url]) => (
+                <div key={key} className="border border-line rounded-md p-4 bg-white">
+                  <p className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">{key === 'provider' ? 'Clash Provider' : key}</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
+                      {url}
+                    </code>
+                    <CopyButton text={url} label="Copy" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </Modal>
 
+      {/* Issued Token Modal */}
       <Modal
         open={Boolean(issuedToken && issuedUrls)}
-        title="Issued Subscription Token"
+        title="Profile Created - Save Your Token"
         onClose={() => setIssuedToken(null)}
-        widthClassName="max-w-3xl"
+        widthClassName="max-w-2xl"
       >
         {issuedToken && issuedUrls ? (
           <div className="space-y-4">
-            <p className="text-sm text-text-muted">
-              This token is only shown when it is created or regenerated. Copy the URLs you need now.
-            </p>
-            <div className="rounded-2xl border border-line bg-black/20 p-4">
-              <div className="flex items-center gap-2 text-sm text-text">
-                <span className="font-medium">Token</span>
-                <span className="font-mono text-xs text-text-muted">{issuedToken.token}</span>
-                <CopyButton text={issuedToken.token} />
+            <div className="bg-warning/10 border border-warning/30 text-warning rounded-md p-4 text-sm">
+              This token is only shown once. Copy and save it securely now.
+            </div>
+            <div className="border border-line rounded-md p-4 bg-white">
+              <p className="text-xs font-medium text-text-muted mb-2">Token</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-sm font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
+                  {issuedToken.token}
+                </code>
+                <CopyButton text={issuedToken.token} label="Copy" />
               </div>
             </div>
-            {Object.entries(issuedUrls).map(([key, value]) => (
-              <div key={key} className="rounded-2xl border border-line bg-black/20 p-4">
-                <div className="flex items-center gap-2">
-                  <span className="w-[80px] text-sm font-medium capitalize text-text">{key}</span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-muted" title={value}>
-                    {value}
-                  </span>
-                  <CopyButton text={value} />
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-text">Subscription URLs</p>
+              {Object.entries(issuedUrls).map(([key, url]) => (
+                <div key={key} className="border border-line rounded-md p-3 bg-white">
+                  <p className="text-xs font-medium text-text-muted mb-2 uppercase">{key === 'provider' ? 'Clash Provider' : key}</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono text-primary break-all p-1.5 bg-surface-1 rounded text-xs border border-line">
+                      {url}
+                    </code>
+                    <CopyButton text={url} label="Copy" />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         ) : null}
       </Modal>
 
+      {/* Delete Confirmation */}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Delete Profile"
-        description={`Delete ${deleteTarget?.name || 'this profile'}? Existing subscription links will stop working.`}
+        description={`Delete "${deleteTarget?.name}"? All subscription links will stop working immediately.`}
         confirmText="Delete"
         danger
         loading={deleteMutation.isPending}
@@ -360,11 +447,13 @@ export function ProfilesPage() {
         onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
       />
 
+      {/* Regenerate Token Confirmation */}
       <ConfirmDialog
         open={Boolean(regenerateTarget)}
         title="Regenerate Token"
-        description={`Regenerate the token for ${regenerateTarget?.name || 'this profile'}? Existing URLs will become invalid immediately.`}
+        description={`Regenerate token for "${regenerateTarget?.name}"? All existing subscription URLs will become invalid immediately.`}
         confirmText="Regenerate"
+        danger
         loading={regenerateMutation.isPending}
         onCancel={() => setRegenerateTarget(null)}
         onConfirm={() => regenerateTarget && regenerateMutation.mutate(regenerateTarget.id)}
