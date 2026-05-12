@@ -29,6 +29,7 @@ interface FormState {
 interface IssuedTokenState {
   name: string;
   token: string;
+  output_format: OutputType;
 }
 
 const defaultForm: FormState = {
@@ -80,6 +81,20 @@ function buildProfileUrls(name: string, token: string, serverBaseUrl: string): P
   };
 }
 
+const URL_KEY_MAP: Record<OutputType, keyof ProfileUrls> = {
+  clash: 'clash',
+  clash_provider: 'provider',
+  loon: 'loon',
+  raw: 'raw',
+};
+
+const URL_LABELS: Record<keyof ProfileUrls, string> = {
+  clash: 'Clash YAML',
+  provider: 'Clash Provider',
+  loon: 'Loon',
+  raw: 'Raw (URI List)',
+};
+
 function hasUsableToken(token: string | undefined): token is string {
   return typeof token === 'string' && token.trim().length > 0;
 }
@@ -124,7 +139,7 @@ export function ProfilesPage() {
       setOpenForm(false);
 
       if (data.profile.token) {
-        setIssuedToken({ name: data.profile.name, token: data.profile.token });
+        setIssuedToken({ name: data.profile.name, token: data.profile.token, output_format: data.profile.output_format });
       }
     },
   });
@@ -159,7 +174,7 @@ export function ProfilesPage() {
       setRegenerateTarget(null);
 
       if (data.profile.token) {
-        setIssuedToken({ name: data.profile.name, token: data.profile.token });
+        setIssuedToken({ name: data.profile.name, token: data.profile.token, output_format: data.profile.output_format });
       }
     },
   });
@@ -408,22 +423,37 @@ export function ProfilesPage() {
           }
 
           const urls = buildProfileUrls(urlsModal.name, urlsModal.token, serverBaseUrl);
+          const primaryKey = URL_KEY_MAP[urlsModal.output_format];
+          const otherEntries = (Object.entries(urls) as [keyof ProfileUrls, string][]).filter(([k]) => k !== primaryKey);
           return (
             <div className="space-y-4">
-              <div className="bg-surface-1 border border-line rounded-lg p-4 text-sm text-text-muted">
-                Copy the subscription URL for your proxy client. Each format has its own endpoint.
-              </div>
-              {Object.entries(urls).map(([key, url]) => (
-                <div key={key} className="border border-line rounded-md p-4 bg-white">
-                  <p className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">{key === 'provider' ? 'Clash Provider' : key}</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-xs font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
-                      {url}
-                    </code>
-                    <CopyButton text={url} label="Copy" />
-                  </div>
+              <div className="border-2 border-accent rounded-md p-4 bg-white">
+                <p className="text-xs font-medium text-accent mb-2 uppercase tracking-wider">{URL_LABELS[primaryKey]} — Primary</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-xs font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
+                    {urls[primaryKey]}
+                  </code>
+                  <CopyButton text={urls[primaryKey]} label="Copy" />
                 </div>
-              ))}
+              </div>
+              <details className="group">
+                <summary className="cursor-pointer text-xs text-text-dim select-none list-none flex items-center gap-1">
+                  <span className="group-open:hidden">▶</span><span className="hidden group-open:inline">▼</span> Other formats
+                </summary>
+                <div className="mt-3 space-y-3">
+                  {otherEntries.map(([key, url]) => (
+                    <div key={key} className="border border-line rounded-md p-3 bg-white">
+                      <p className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">{URL_LABELS[key]}</p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
+                          {url}
+                        </code>
+                        <CopyButton text={url} label="Copy" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </details>
             </div>
           );
         })()}
@@ -452,17 +482,41 @@ export function ProfilesPage() {
             </div>
             <div className="space-y-3">
               <p className="text-sm font-medium text-text">Subscription URLs</p>
-              {Object.entries(issuedUrls).map(([key, url]) => (
-                <div key={key} className="border border-line rounded-md p-3 bg-white">
-                  <p className="text-xs font-medium text-text-muted mb-2 uppercase">{key === 'provider' ? 'Clash Provider' : key}</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-xs font-mono text-primary break-all p-1.5 bg-surface-1 rounded text-xs border border-line">
-                      {url}
-                    </code>
-                    <CopyButton text={url} label="Copy" />
-                  </div>
-                </div>
-              ))}
+              {(() => {
+                const primaryKey = URL_KEY_MAP[issuedToken.output_format];
+                const otherEntries = (Object.entries(issuedUrls) as [keyof ProfileUrls, string][]).filter(([k]) => k !== primaryKey);
+                return (
+                  <>
+                    <div className="border-2 border-accent rounded-md p-3 bg-white">
+                      <p className="text-xs font-medium text-accent mb-2 uppercase">{URL_LABELS[primaryKey]} — Primary</p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs font-mono text-primary break-all p-1.5 bg-surface-1 rounded text-xs border border-line">
+                          {issuedUrls[primaryKey]}
+                        </code>
+                        <CopyButton text={issuedUrls[primaryKey]} label="Copy" />
+                      </div>
+                    </div>
+                    <details className="group">
+                      <summary className="cursor-pointer text-xs text-text-dim select-none list-none flex items-center gap-1">
+                        <span className="group-open:hidden">▶</span><span className="hidden group-open:inline">▼</span> Other formats
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        {otherEntries.map(([key, url]) => (
+                          <div key={key} className="border border-line rounded-md p-3 bg-white">
+                            <p className="text-xs font-medium text-text-muted mb-2 uppercase">{URL_LABELS[key]}</p>
+                            <div className="flex items-center gap-2">
+                              <code className="flex-1 text-xs font-mono text-primary break-all p-1.5 bg-surface-1 rounded text-xs border border-line">
+                                {url}
+                              </code>
+                              <CopyButton text={url} label="Copy" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  </>
+                );
+              })()}
             </div>
           </div>
         ) : null}

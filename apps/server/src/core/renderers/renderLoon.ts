@@ -1,17 +1,22 @@
 import { ProxyNode } from '@/types/proxy';
 
 /**
+ * Transports not supported by Loon's VLESS implementation.
+ */
+const UNSUPPORTED_VLESS_TRANSPORTS = new Set(['grpc', 'xhttp', 'splithttp', 'quic']);
+
+/**
  * 将节点渲染为 Loon 格式
- * Loon 使用 URI 格式，每行一个节点
+ * Loon 使用原生配置行格式，每行一个节点
  */
 export function renderLoon(nodes: ProxyNode[]): string {
   return nodes
-    .map(nodeToLoonUri)
+    .map(nodeToLoonLine)
     .filter(Boolean)
     .join('\n');
 }
 
-function nodeToLoonUri(node: ProxyNode): string | null {
+function nodeToLoonLine(node: ProxyNode): string | null {
   switch (node.protocol) {
     case 'ss': {
       const cipher = node.cipher || 'aes-256-gcm';
@@ -43,19 +48,56 @@ function nodeToLoonUri(node: ProxyNode): string | null {
       return `trojan://${password}@${node.server}:${node.port}?sni=${sni}#${encodeURIComponent(node.name)}`;
     }
 
-    case 'vless': {
-      const uuid = node.uuid || '';
-      const base = `vless://${uuid}@${node.server}:${node.port}`;
-      const params = new URLSearchParams();
-      if (node.transport) params.append('type', node.transport);
-      if (node.host) params.append('host', node.host);
-      if (node.path) params.append('path', node.path);
-      if (node.tls) params.append('tls', 'tls');
-      const hash = encodeURIComponent(node.name);
-      return `${base}?${params.toString()}#${hash}`;
-    }
+    case 'vless':
+      return vlessToLoon(node);
 
     default:
       return null;
   }
+}
+
+/**
+ * Renders a VLESS node as a Loon native proxy line.
+ *
+ * Loon format:
+ *   Name = VLESS,server,port,"uuid",transport=tcp[,option=value,...]
+ *
+ * Unsupported transports (grpc, xhttp, splithttp, quic) are filtered out
+ * by returning null.
+ */
+function vlessToLoon(node: ProxyNode): string | null {
+  const rawTransport = (node.transport || 'tcp').toLowerCase();
+
+  if (UNSUPPORTED_VLESS_TRANSPORTS.has(rawTransport)) return null;
+
+  const isReality = node.tls === 'reality';
+  // Loon uses "http" for both HTTP and H2 transports
+  const transport = rawTransport === 'h2' ? 'http' : rawTransport;
+
+  const opts: string[] = [`transport=${transport}`];
+
+  if (isReality) {
+    if (node.flow) opts.push(`flow=${node.flow}`);
+    if (node.realityPublicKey) opts.push(`public-key="${node.realityPublicKey}"`);
+    if (node.realityShortId !== undefined && node.realityShortId !== '') {
+      opts.push(`short-id=${node.realityShortId}`);
+    }
+    opts.push('udp=true', 'over-tls=true');
+    if (node.host) opts.push(`sni=${node.host}`);
+    opts.push('skip-cert-verify=true');
+  } else {
+    if (transport === 'ws' || transport === 'http') {
+      if (node.path) opts.push(`path=${node.path}`);
+      if (node.host) opts.push(`host=${node.host}`);
+    }
+
+    const hasTls = !!node.tls && node.tls !== 'none';
+    if (hasTls) {
+      opts.push('over-tls=true');
+      if (node.host) opts.push(`sni=${node.host}`);
+      opts.push(`skip-cert-verify=${node.tlsInsecure ? 'true' : 'false'}`);
+    }
+  }
+
+  return `${node.name} = VLESS,${node.server},${node.port},"${node.uuid || ''}",${opts.join(',')}`;
 }
