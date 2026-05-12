@@ -41,6 +41,6 @@ scripts/.dev.pids
 # OS
 .DS_Store
 Thumbs.db
-.gz
-.tar.gz
-.zip   
+*.gz
+*.tar.gz
+*.zip   
