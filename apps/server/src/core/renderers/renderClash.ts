@@ -2,7 +2,7 @@ import { ProxyNode } from '@/types/proxy';
 import { stringify as stringifyYaml } from 'yaml';
 import { nodeToMihomoProxy } from './mihomoProxy';
 
-const CLASH_SUPPORTED_PROTOCOLS = new Set(['ss', 'vmess', 'trojan', 'vless', 'socks5', 'http']);
+const CLASH_SUPPORTED_PROTOCOLS = new Set(['ss', 'vmess', 'trojan', 'vless', 'socks5', 'http', 'hysteria2']);
 
 /**
  * 将节点渲染为 Clash YAML 格式

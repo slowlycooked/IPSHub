@@ -18,6 +18,8 @@ services:
       target: backend
     container_name: ipshub-backend
     restart: unless-stopped
+    entrypoint: ["/usr/bin/dumb-init", "--"]
+    command: ["node", "apps/server/dist/index.js"]
     environment:
       - TZ=Asia/Shanghai
       - NODE_ENV=production

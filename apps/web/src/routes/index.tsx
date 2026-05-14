@@ -9,6 +9,7 @@ import { ProvidersPage } from '@/pages/ProvidersPage';
 import { NodesPage } from '@/pages/NodesPage';
 import { ProfilesPage } from '@/pages/ProfilesPage';
 import { LogsPage } from '@/pages/LogsPage';
+import { DiagnosticsPage } from '@/pages/DiagnosticsPage';
 
 function ProtectedLayout({ children }: { children: ReactElement }) {
   const { user, isLoading } = useAuth();
@@ -79,6 +80,14 @@ export function AppRoutes() {
         element={
           <ProtectedLayout>
             <LogsPage />
+          </ProtectedLayout>
+        }
+      />
+      <Route
+        path="/diagnostics"
+        element={
+          <ProtectedLayout>
+            <DiagnosticsPage />
           </ProtectedLayout>
         }
       />

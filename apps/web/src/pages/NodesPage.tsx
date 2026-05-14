@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { nodesApi } from '@/api/nodes';
 import { providersApi } from '@/api/providers';
 import { queryClient } from '@/api/queryClient';
-import type { NodeItem } from '@/types/node';
+import type { NodeConnectivityProbeResult, NodeConnectivityResult, NodeItem } from '@/types/node';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -22,6 +22,7 @@ export function NodesPage() {
   const [providerFilter, setProviderFilter] = useState('all');
   const [protocolFilter, setProtocolFilter] = useState('all');
   const [enabledFilter, setEnabledFilter] = useState('all');
+  const [connectivityMap, setConnectivityMap] = useState<Record<string, NodeConnectivityResult>>({});
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['nodes'],
@@ -54,6 +55,21 @@ export function NodesPage() {
     },
   });
 
+  const testLatencyMutation = useMutation({
+    mutationFn: () => nodesApi.testLatency(),
+    onSuccess: (payload) => {
+      const map = payload.results.reduce<Record<string, NodeConnectivityResult>>((acc, item) => {
+        acc[item.nodeId] = item;
+        return acc;
+      }, {});
+      setConnectivityMap(map);
+      pushToast(`Latency test completed for ${payload.total} nodes`, 'success');
+    },
+    onError: () => {
+      pushToast('Latency test failed', 'error');
+    },
+  });
+
   const providers = providerData?.providers || [];
   const nodes = (data?.nodes || []) as NodeItem[];
   const providerNameMap = new Map(providers.map((provider) => [provider.id, provider.name]));
@@ -82,6 +98,26 @@ export function NodesPage() {
     protocols: protocols.length,
   }), [nodes, protocols]);
 
+  const renderProbe = (probe?: NodeConnectivityProbeResult) => {
+    if (!probe) {
+      return <span className="text-xs text-text-muted">-</span>;
+    }
+
+    if (probe.ok) {
+      return (
+        <StatusBadge tone="success">
+          {probe.latencyMs !== null ? `${probe.latencyMs} ms` : 'OK'}
+        </StatusBadge>
+      );
+    }
+
+    return (
+      <span title={probe.error || 'Probe failed'}>
+        <StatusBadge tone="danger">Fail</StatusBadge>
+      </span>
+    );
+  };
+
   if (isLoading) {
     return <LoadingState label="Loading nodes..." />;
   }
@@ -95,6 +131,15 @@ export function NodesPage() {
       <PageHeader 
         title="Nodes" 
         description="View and manage proxy nodes imported from providers."
+        actions={(
+          <Button
+            variant="primary"
+            onClick={() => testLatencyMutation.mutate()}
+            isLoading={testLatencyMutation.isPending}
+          >
+            Test TCP/HTTP Latency
+          </Button>
+        )}
       />
 
       {/* Statistics Cards */}
@@ -163,7 +208,7 @@ export function NodesPage() {
       ) : (
         <Card className="mt-6">
           <DataTable
-            headers={['Node', 'Provider', 'Protocol', 'Endpoint', 'Tag', 'Status', 'Updated', 'Actions']}
+            headers={['Node', 'Provider', 'Protocol', 'Endpoint', 'TCP', 'HTTP', 'Tag', 'Status', 'Updated', 'Actions']}
           >
             {filtered.map((node) => (
               <tr key={node.id} className="border-b border-line text-sm text-text-muted hover:bg-surface-1">
@@ -175,6 +220,8 @@ export function NodesPage() {
                 <td className="px-4 py-3 font-mono text-xs text-primary">
                   {node.server}:{node.port}
                 </td>
+                <td className="px-4 py-3 text-xs">{renderProbe(connectivityMap[node.id]?.tcp)}</td>
+                <td className="px-4 py-3 text-xs">{renderProbe(connectivityMap[node.id]?.http)}</td>
                 <td className="px-4 py-3 text-xs max-w-xs truncate">{node.tag || '-'}</td>
                 <td className="px-4 py-3">
                   <StatusBadge tone={node.enabled ? 'success' : 'neutral'}>

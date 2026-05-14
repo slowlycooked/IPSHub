@@ -18,6 +18,7 @@ import { registerLogsRoutes } from '@/modules/logs/routes';
 import { registerSubscriptionRoutes } from '@/modules/subscription/routes';
 import { startProviderRefreshScheduler, stopProviderRefreshScheduler } from '@/modules/providers/scheduler';
 import { registerConfigRoutes } from '@/modules/config/routes';
+import { registerDiagnosticsRoutes } from '@/modules/diagnostics/routes';
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const serverRoot = resolve(currentDir, '..');
@@ -81,6 +82,9 @@ await registerSubscriptionRoutes(app);
 
 // Register public config route (no auth required)
 await registerConfigRoutes(app);
+
+// Register diagnostics routes
+await registerDiagnosticsRoutes(app);
 
 // Register static file serving for the frontend
 const publicDir = resolve(process.cwd(), 'public');

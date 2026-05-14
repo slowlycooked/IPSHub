@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { ThemeSwitcher } from '@/components/ui/ThemeSwitcher';
 
 const items = [
   { label: 'Dashboard', to: '/' },
@@ -6,31 +7,35 @@ const items = [
   { label: 'Nodes', to: '/nodes' },
   { label: 'Profiles', to: '/profiles' },
   { label: 'Logs', to: '/logs' },
+  { label: 'Diagnostics', to: '/diagnostics' },
 ];
 
 export function Sidebar() {
   return (
     <>
       {/* Mobile top bar (< md) */}
-      <div className="fixed top-0 left-0 right-0 z-40 flex h-14 items-center border-b border-white/10 bg-primary px-4 md:hidden">
-        <span className="font-display text-lg font-bold tracking-wide text-white mr-6">IPSHub</span>
-        <nav className="flex items-center gap-1 overflow-x-auto">
-          {items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                  isActive
-                    ? 'bg-accent text-white'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+      <div className="fixed top-0 left-0 right-0 z-40 flex h-14 items-center justify-between border-b border-white/10 bg-primary px-4 md:hidden">
+        <div className="flex items-center">
+          <span className="font-display text-lg font-bold tracking-wide text-white mr-6">IPSHub</span>
+          <nav className="flex items-center gap-1 overflow-x-auto">
+            {items.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `shrink-0 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                    isActive
+                      ? 'bg-accent text-white'
+                      : 'text-white/70 hover:text-white hover:bg-white/10'
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+        <ThemeSwitcher />
       </div>
 
       {/* Desktop sidebar (md+) */}
@@ -62,11 +67,14 @@ export function Sidebar() {
           ))}
         </nav>
 
-        {/* Footer status */}
-        <div className="px-6 py-4 border-t border-white/10">
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-success"></span>
-            <span className="text-xs text-white/40">System Online</span>
+        {/* Footer with theme switcher and status */}
+        <div className="px-6 py-4 border-t border-white/10 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-success"></span>
+              <span className="text-xs text-white/40">System Online</span>
+            </div>
+            <ThemeSwitcher />
           </div>
         </div>
       </aside>

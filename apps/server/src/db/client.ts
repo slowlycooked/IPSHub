@@ -168,6 +168,10 @@ export function initializeTables(database: Database.Database): void {
   database.exec(SCHEMA.refresh_jobs);
   database.exec(SCHEMA.access_logs);
   database.exec(SCHEMA.app_settings);
+  database.exec(SCHEMA.diagnostic_runs);
+  database.exec(SCHEMA.diagnostic_node_results);
+  database.exec(SCHEMA.diagnostic_logs);
+  database.exec(SCHEMA.diagnostic_config_diffs);
 
   runMigrations(database);
 

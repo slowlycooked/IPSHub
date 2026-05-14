@@ -140,6 +140,89 @@ export const SCHEMA = {
     );
   `,
 
+  // 诊断运行表
+  diagnostic_runs: `
+    CREATE TABLE IF NOT EXISTS diagnostic_runs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'compare',
+      client_formats TEXT NOT NULL DEFAULT '["clash","loon"]',
+      scope TEXT NOT NULL DEFAULT 'provider',
+      provider_ids TEXT NOT NULL DEFAULT '[]',
+      node_ids TEXT NOT NULL DEFAULT '[]',
+      test_urls TEXT NOT NULL DEFAULT '[]',
+      timeout_ms INTEGER NOT NULL DEFAULT 5000,
+      concurrency INTEGER NOT NULL DEFAULT 3,
+      status TEXT NOT NULL DEFAULT 'pending',
+      total_nodes INTEGER NOT NULL DEFAULT 0,
+      completed_nodes INTEGER NOT NULL DEFAULT 0,
+      success_nodes INTEGER NOT NULL DEFAULT 0,
+      failed_nodes INTEGER NOT NULL DEFAULT 0,
+      summary_json TEXT,
+      runtime_precheck_json TEXT,
+      run_error TEXT,
+      started_at INTEGER,
+      finished_at INTEGER,
+      created_at INTEGER NOT NULL
+    );
+  `,
+
+  // 诊断节点结果表
+  diagnostic_node_results: `
+    CREATE TABLE IF NOT EXISTS diagnostic_node_results (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      node_id TEXT,
+      provider_id TEXT,
+      node_name TEXT,
+      protocol TEXT,
+      server TEXT,
+      port INTEGER,
+      raw_status TEXT,
+      raw_latency_ms INTEGER,
+      ipshub_status TEXT,
+      ipshub_latency_ms INTEGER,
+      tcp_status TEXT,
+      tcp_latency_ms INTEGER,
+      clash_config_status TEXT,
+      loon_config_status TEXT,
+      failed_stage TEXT,
+      error_reason TEXT,
+      diagnosis TEXT,
+      result_json TEXT,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES diagnostic_runs(id) ON DELETE CASCADE
+    );
+  `,
+
+  // 诊断日志表
+  diagnostic_logs: `
+    CREATE TABLE IF NOT EXISTS diagnostic_logs (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      node_id TEXT,
+      stage TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'INFO',
+      message TEXT NOT NULL,
+      detail_json TEXT,
+      duration_ms INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES diagnostic_runs(id) ON DELETE CASCADE
+    );
+  `,
+
+  // 诊断配置 Diff 表
+  diagnostic_config_diffs: `
+    CREATE TABLE IF NOT EXISTS diagnostic_config_diffs (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      diff_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (run_id) REFERENCES diagnostic_runs(id) ON DELETE CASCADE
+    );
+  `,
+
   // 索引
   indexes: [
     'CREATE INDEX IF NOT EXISTS idx_providers_user ON providers(user_id);',
@@ -156,6 +239,13 @@ export const SCHEMA = {
     'CREATE INDEX IF NOT EXISTS idx_refresh_jobs_created ON refresh_jobs(created_at);',
     'CREATE INDEX IF NOT EXISTS idx_access_logs_profile ON access_logs(profile_id);',
     'CREATE INDEX IF NOT EXISTS idx_access_logs_accessed ON access_logs(accessed_at);',
+    'CREATE INDEX IF NOT EXISTS idx_diagnostic_runs_user ON diagnostic_runs(user_id);',
+    'CREATE INDEX IF NOT EXISTS idx_diagnostic_runs_status ON diagnostic_runs(status);',
+    'CREATE INDEX IF NOT EXISTS idx_diagnostic_runs_created ON diagnostic_runs(created_at DESC);',
+    'CREATE INDEX IF NOT EXISTS idx_diagnostic_node_results_run ON diagnostic_node_results(run_id);',
+    'CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_run ON diagnostic_logs(run_id);',
+    'CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_node ON diagnostic_logs(run_id, node_id);',
+    'CREATE INDEX IF NOT EXISTS idx_diagnostic_config_diffs_run ON diagnostic_config_diffs(run_id);',
   ],
 };
 

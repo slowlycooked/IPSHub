@@ -1,42 +1,43 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Brand colors (from DESIGN.md Enterprise)
-        primary: '#072C2C',
-        'primary-light': '#0f4a4a',
-        accent: '#FF5F03',
-        'accent-dark': '#d94e00',
+        // Brand colors (dynamic from CSS variables)
+        primary: 'var(--color-primary)',
+        'primary-light': 'var(--color-primary-light)',
+        accent: 'var(--color-accent)',
+        'accent-dark': 'var(--color-accent-dark)',
 
         // Status colors
-        success: '#16A34A',
-        warning: '#D97706',
-        danger: '#DC2626',
+        success: 'var(--color-success)',
+        warning: 'var(--color-warning)',
+        danger: 'var(--color-danger)',
 
         // Surface / background
-        surface: '#EDEADE',
-        'surface-base': '#EDEADE',
-        'surface-0': '#ffffff',
-        'surface-1': '#f4f0e5',
-        'surface-2': '#ede9dc',
+        surface: 'var(--color-surface)',
+        'surface-base': 'var(--color-surface)',
+        'surface-0': 'var(--color-surface-0)',
+        'surface-1': 'var(--color-surface-1)',
+        'surface-2': 'var(--color-surface-1)',
 
-        // Text colors (light theme)
-        text: '#111827',
-        'text-muted': '#4B5563',
-        'text-dim': '#9CA3AF',
-        'text-inverse': '#ffffff',
+        // Text colors
+        text: 'var(--color-text)',
+        'text-muted': 'var(--color-text-muted)',
+        'text-dim': 'var(--color-text-dim)',
+        'text-inverse': 'var(--color-text-inverse)',
 
         // Borders
-        line: '#d1d9c8',
-        'line-soft': '#e5ead9',
+        line: 'var(--color-line)',
+        'line-soft': 'var(--color-line-soft)',
 
         // Panels (compat aliases)
-        panel: '#ffffff',
-        'panel-strong': '#f4f0e5',
+        panel: 'var(--color-panel)',
+        'panel-strong': 'var(--color-panel-strong)',
 
-        neutral: '#F3F4F6',
+        neutral: 'var(--color-surface-1)',
       },
       fontFamily: {
         sans: ['Ubuntu', 'system-ui', 'sans-serif'],
@@ -60,10 +61,10 @@ export default {
         '3xl': ['48px', { lineHeight: '56px' }],
       },
       boxShadow: {
-        sm: '0 1px 4px rgba(7, 44, 44, 0.07)',
-        md: '0 4px 12px rgba(7, 44, 44, 0.10)',
-        lg: '0 8px 24px rgba(7, 44, 44, 0.12)',
-        xl: '0 16px 40px rgba(7, 44, 44, 0.16)',
+        sm: '0 1px 4px rgba(0, 0, 0, 0.1)',
+        md: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        lg: '0 8px 24px rgba(0, 0, 0, 0.2)',
+        xl: '0 16px 40px rgba(0, 0, 0, 0.25)',
       },
     },
   },

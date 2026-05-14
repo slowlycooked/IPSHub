@@ -25,31 +25,44 @@ function nodeToLoonLine(node: ProxyNode): string | null {
     }
 
     case 'vmess': {
-      const config = {
-        v: '2',
-        ps: node.name,
-        add: node.server,
-        port: node.port,
-        id: node.uuid,
-        aid: node.alterId || 0,
-        net: node.transport || 'tcp',
-        type: 'none',
-        host: node.host || '',
-        path: node.path || '',
-        tls: node.tls ? 'tls' : 'none',
-      };
-      const encoded = Buffer.from(JSON.stringify(config)).toString('base64');
-      return `vmess://${encoded}`;
+      const cipher = node.cipher || 'aes-128-gcm';
+      const transport = (node.transport || 'tcp').toLowerCase();
+      const opts: string[] = [`transport=${transport}`];
+      if (transport === 'ws' || transport === 'http') {
+        if (node.path) opts.push(`path=${node.path}`);
+        if (node.host) opts.push(`host=${node.host}`);
+      }
+      const hasTls = !!node.tls && node.tls !== 'none';
+      if (hasTls) {
+        opts.push('over-tls=true');
+        if (node.host) opts.push(`sni=${node.host}`);
+        opts.push(`skip-cert-verify=${node.tlsInsecure ? 'true' : 'false'}`);
+      }
+      return `${node.name} = VMess,${node.server},${node.port},${cipher},"${node.uuid || ''}",${opts.join(',')}`;
     }
 
     case 'trojan': {
-      const password = encodeURIComponent(node.password || '');
+      const password = node.password || '';
       const sni = node.host || node.server;
-      return `trojan://${password}@${node.server}:${node.port}?sni=${sni}#${encodeURIComponent(node.name)}`;
+      const skipVerify = node.allowInsecure ?? node.tlsInsecure ?? false;
+      const opts = ['over-tls=true', `sni=${sni}`, `skip-cert-verify=${skipVerify ? 'true' : 'false'}`];
+      return `${node.name} = Trojan,${node.server},${node.port},"${password}",${opts.join(',')}`;
     }
 
     case 'vless':
       return vlessToLoon(node);
+
+    case 'hysteria2': {
+      const password = node.password || '';
+      const opts: string[] = [];
+      const sni = node.host || '';
+      if (sni) opts.push(`sni=${sni}`);
+      const skipVerify = node.tlsInsecure || node.allowInsecure || false;
+      opts.push(`skip-cert-verify=${skipVerify ? 'true' : 'false'}`);
+      const mport = node.extraData?.['mport'];
+      if (mport) opts.push(`download-bandwidth=0`, `upload-bandwidth=0`);
+      return `${node.name} = Hysteria2,${node.server},${node.port},${password}${opts.length ? ',' + opts.join(',') : ''}`;
+    }
 
     default:
       return null;

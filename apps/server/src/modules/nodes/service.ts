@@ -1,8 +1,12 @@
 import { z } from 'zod';
+import net from 'node:net';
+import http from 'node:http';
+import https from 'node:https';
 import { getDatabase, withTransaction } from '@/db/client';
 import { ProxyNode } from '@/types/proxy';
 import { createLogger } from '@/utils/logger';
 import { scoreNodeName, isInfoNode, generateNamedFingerprint } from '@/core/merge/fingerprint';
+import { SSRFGuardError, validateUrl } from '@/core/fetcher/ssrfGuard';
 import { v4 as uuidv4 } from 'uuid';
 
 const logger = createLogger('nodes-service');
@@ -20,6 +24,25 @@ export interface NodeDTO extends ProxyNode {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ConnectivityProbeResult {
+  ok: boolean;
+  latencyMs: number | null;
+  statusCode?: number;
+  error?: string;
+}
+
+export interface NodeConnectivityResult {
+  nodeId: string;
+  tcp: ConnectivityProbeResult;
+  http: ConnectivityProbeResult;
+  checkedAt: number;
+}
+
+const DEFAULT_CONNECTIVITY_TIMEOUT_MS = 3000;
+const MAX_CONNECTIVITY_TIMEOUT_MS = 15000;
+const MIN_CONNECTIVITY_TIMEOUT_MS = 500;
+const CONNECTIVITY_CONCURRENCY = 20;
 
 function serializeExtraData(node: ProxyNode): string {
   const extraData: Record<string, any> = {};
@@ -319,6 +342,165 @@ export function enableNode(id: string, userId?: string): NodeDTO | null {
  */
 export function disableNode(id: string, userId?: string): NodeDTO | null {
   return updateNode(id, { enabled: false }, userId);
+}
+
+function sanitizeTimeout(timeoutMs?: number): number {
+  if (!timeoutMs || Number.isNaN(timeoutMs)) {
+    return DEFAULT_CONNECTIVITY_TIMEOUT_MS;
+  }
+
+  return Math.min(
+    MAX_CONNECTIVITY_TIMEOUT_MS,
+    Math.max(MIN_CONNECTIVITY_TIMEOUT_MS, Math.floor(timeoutMs))
+  );
+}
+
+function normalizeHostForUrl(host: string): string {
+  if (host.includes(':') && !host.startsWith('[') && !host.endsWith(']')) {
+    return `[${host}]`;
+  }
+  return host;
+}
+
+function shouldUseHttps(node: NodeDTO): boolean {
+  const tls = typeof node.tls === 'string' ? node.tls.toLowerCase() : '';
+  return node.protocol === 'trojan' || tls === 'tls' || tls === 'reality' || tls === 'xtls';
+}
+
+function runTcpProbe(node: NodeDTO, timeoutMs: number): Promise<ConnectivityProbeResult> {
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let finished = false;
+
+    const finish = (result: ConnectivityProbeResult) => {
+      if (finished) return;
+      finished = true;
+      socket.destroy();
+      resolve(result);
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => {
+      finish({ ok: true, latencyMs: Date.now() - startedAt });
+    });
+
+    socket.once('timeout', () => {
+      finish({ ok: false, latencyMs: Date.now() - startedAt, error: 'TCP probe timeout' });
+    });
+
+    socket.once('error', (error: Error) => {
+      finish({
+        ok: false,
+        latencyMs: Date.now() - startedAt,
+        error: error.message || 'TCP probe failed',
+      });
+    });
+
+    socket.connect(node.port, node.server);
+  });
+}
+
+function runHttpProbe(node: NodeDTO, timeoutMs: number): Promise<ConnectivityProbeResult> {
+  const isHttps = shouldUseHttps(node);
+  const protocol = isHttps ? 'https' : 'http';
+  const url = `${protocol}://${normalizeHostForUrl(node.server)}:${node.port}/`;
+
+  try {
+    validateUrl(url, process.env.NODE_ENV === 'development');
+  } catch (error) {
+    const message = error instanceof SSRFGuardError ? error.message : 'HTTP probe URL invalid';
+    return Promise.resolve({ ok: false, latencyMs: null, error: message });
+  }
+
+  const startedAt = Date.now();
+
+  return new Promise((resolve) => {
+    const request = (isHttps ? https : http).request(
+      {
+        host: node.server,
+        port: node.port,
+        path: '/',
+        method: 'HEAD',
+        timeout: timeoutMs,
+        rejectUnauthorized: false,
+        headers: {
+          'User-Agent': 'IPSHub/1.0',
+          Accept: '*/*',
+        },
+      },
+      (response) => {
+        response.resume();
+        resolve({
+          ok: true,
+          latencyMs: Date.now() - startedAt,
+          statusCode: response.statusCode,
+        });
+      }
+    );
+
+    request.on('timeout', () => {
+      request.destroy(new Error('HTTP probe timeout'));
+    });
+
+    request.on('error', (error: Error) => {
+      resolve({
+        ok: false,
+        latencyMs: Date.now() - startedAt,
+        error: error.message || 'HTTP probe failed',
+      });
+    });
+
+    request.end();
+  });
+}
+
+async function runWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results: R[] = new Array(items.length);
+  let currentIndex = 0;
+
+  const runWorker = async () => {
+    while (currentIndex < items.length) {
+      const index = currentIndex;
+      currentIndex += 1;
+      results[index] = await worker(items[index]);
+    }
+  };
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return results;
+}
+
+export async function testNodesConnectivity(
+  userId?: string,
+  timeoutMs?: number
+): Promise<NodeConnectivityResult[]> {
+  const nodes = getNodes(userId);
+  const effectiveTimeout = sanitizeTimeout(timeoutMs);
+
+  return runWithConcurrency(nodes, CONNECTIVITY_CONCURRENCY, async (node) => {
+    const [tcp, httpResult] = await Promise.all([
+      runTcpProbe(node, effectiveTimeout),
+      runHttpProbe(node, effectiveTimeout),
+    ]);
+
+    return {
+      nodeId: node.id,
+      tcp,
+      http: httpResult,
+      checkedAt: Date.now(),
+    };
+  });
 }
 
 /**

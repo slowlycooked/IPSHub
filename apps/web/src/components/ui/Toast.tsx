@@ -16,12 +16,12 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 function toneClass(tone: ToastTone): string {
   if (tone === 'success') {
-    return 'border-success/40 bg-success/15 text-emerald-200';
+    return 'border-emerald-500/60 bg-emerald-900/90 text-emerald-100';
   }
   if (tone === 'error') {
-    return 'border-danger/40 bg-danger/15 text-red-200';
+    return 'border-red-500/60 bg-red-900/90 text-red-100';
   }
-  return 'border-line bg-panel-strong text-text';
+  return 'border-blue-500/60 bg-gray-900/90 text-gray-100';
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -52,11 +52,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed right-4 top-4 z-[60] space-y-2 pointer-events-none">
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center space-y-2 pointer-events-none">
         {items.map((item) => (
           <div 
             key={item.id} 
-            className={`rounded-lg border px-4 py-3 text-sm shadow-lg pointer-events-auto animate-in slide-in-from-top-2 fade-in ${toneClass(item.tone)}`}
+            className={`rounded-lg border px-5 py-3 text-sm font-medium shadow-xl pointer-events-auto animate-in slide-in-from-top-2 fade-in whitespace-nowrap backdrop-blur-sm ${toneClass(item.tone)}`}
           >
             {item.message}
           </div>

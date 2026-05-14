@@ -106,3 +106,72 @@ describe('renderLoon – VLESS', () => {
     );
   });
 });
+
+describe('renderLoon – Trojan', () => {
+  it('renders Trojan with SNI and TLS', () => {
+    const uri = `trojan://mypassword@server.example.com:443?sni=server.example.com#Trojan-TLS`;
+    const { nodes } = parseUriList(uri);
+    expect(nodes).toHaveLength(1);
+
+    const line = renderLoon(nodes);
+    expect(line).toBe(
+      `Trojan-TLS = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+    );
+  });
+
+  it('renders Trojan with allowInsecure', () => {
+    const uri = `trojan://mypassword@server.example.com:443?sni=server.example.com&allowInsecure=true#Trojan-Insecure`;
+    const { nodes } = parseUriList(uri);
+    expect(nodes).toHaveLength(1);
+
+    const line = renderLoon(nodes);
+    expect(line).toBe(
+      `Trojan-Insecure = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=true`,
+    );
+  });
+
+  it('falls back to server as SNI when no sni param', () => {
+    const uri = `trojan://mypassword@server.example.com:443#Trojan-NoSNI`;
+    const { nodes } = parseUriList(uri);
+    expect(nodes).toHaveLength(1);
+
+    const line = renderLoon(nodes);
+    expect(line).toBe(
+      `Trojan-NoSNI = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+    );
+  });
+
+  it('native format passes validator field-count check', () => {
+    const uri = `trojan://mypassword@server.example.com:443?sni=server.example.com#Trojan-Valid`;
+    const { nodes } = parseUriList(uri);
+    const line = renderLoon(nodes);
+    // Validator splits on first '=' and checks comma parts >= 3
+    const rest = line.split('=', 2)[1]?.trim() ?? '';
+    const parts = rest.split(',').map((s) => s.trim());
+    expect(parts.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('renderLoon – VMess', () => {
+  it('renders VMess TCP plain', () => {
+    const uri = `vmess://${Buffer.from(JSON.stringify({ v: '2', ps: 'VMess-TCP', add: 'server.example.com', port: 443, id: UUID, aid: 0, net: 'tcp', type: 'none', host: '', path: '', tls: 'none' })).toString('base64')}`;
+    const { nodes } = parseUriList(uri);
+    expect(nodes).toHaveLength(1);
+
+    const line = renderLoon(nodes);
+    expect(line).toBe(
+      `VMess-TCP = VMess,server.example.com,443,aes-128-gcm,"${UUID}",transport=tcp`,
+    );
+  });
+
+  it('renders VMess WS TLS', () => {
+    const uri = `vmess://${Buffer.from(JSON.stringify({ v: '2', ps: 'VMess-WS-TLS', add: 'server.example.com', port: 443, id: UUID, aid: 0, net: 'ws', type: 'none', host: 'server.example.com', path: '/ws', tls: 'tls' })).toString('base64')}`;
+    const { nodes } = parseUriList(uri);
+    expect(nodes).toHaveLength(1);
+
+    const line = renderLoon(nodes);
+    expect(line).toBe(
+      `VMess-WS-TLS = VMess,server.example.com,443,aes-128-gcm,"${UUID}",transport=ws,path=/ws,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+    );
+  });
+});

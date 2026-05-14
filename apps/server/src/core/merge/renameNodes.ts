@@ -74,10 +74,10 @@ export function cleanNodeNames(nodes: ProxyNode[]): ProxyNode[] {
   return nodes.map(node => ({
     ...node,
     name: node.name
-      // 移除表情符号
+      // 移除表情符号，但保留国旗区域指示符 (U+1F1E0–U+1F1FF)
       .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
-      // 移除特殊字符但保留中文、英文、数字、部分符号
-      .replace(/[^\w\u4e00-\u9fff\s\-\(\)（）]/g, '')
+      // 移除特殊字符但保留中文、英文、数字、部分符号，以及国旗 emoji（区域指示符对）
+      .replace(/[^\w\u4e00-\u9fff\s\-\(\)（）\u{1F1E0}-\u{1F1FF}]/gu, '')
       // 多个空格合并为一个
       .replace(/\s+/g, ' ')
       // 去除首尾空格

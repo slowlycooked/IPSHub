@@ -12,3 +12,17 @@ export interface NodeItem {
   createdAt?: number;
   updatedAt?: number;
 }
+
+export interface NodeConnectivityProbeResult {
+  ok: boolean;
+  latencyMs: number | null;
+  statusCode?: number;
+  error?: string;
+}
+
+export interface NodeConnectivityResult {
+  nodeId: string;
+  tcp: NodeConnectivityProbeResult;
+  http: NodeConnectivityProbeResult;
+  checkedAt: number;
+}
