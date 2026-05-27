@@ -1,5 +1,5 @@
 import { apiClient } from '@/api/client';
-import type { Profile } from '@/types/profile';
+import type { ClashConfig, Profile } from '@/types/profile';
 
 export type ProfilePayload = {
   name: string;
@@ -7,6 +7,7 @@ export type ProfilePayload = {
   output_format: string;
   include_protocols?: string[];
   exclude_keywords?: string[];
+  clash_config?: ClashConfig | null;
 };
 
 export const profilesApi = {

@@ -4,8 +4,13 @@ import { createLogger } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { decryptString, encryptString, hashToken } from '@/utils/crypto';
+import type { ClashConfig } from '@/types/clashConfig';
 
 const logger = createLogger('profiles-service');
+
+// Zod schema for ClashConfig – kept permissive intentionally so the frontend
+// can pass partial configs without being rejected at the boundary.
+const clashConfigSchema = z.record(z.unknown()).optional();
 
 export const createProfileSchema = z.object({
   name: z.string().min(1).max(255),
@@ -13,6 +18,7 @@ export const createProfileSchema = z.object({
   output_format: z.enum(['clash', 'clash_provider', 'loon', 'raw']).default('clash'),
   include_protocols: z.array(z.string()).optional(),
   exclude_keywords: z.array(z.string()).optional(),
+  clash_config: clashConfigSchema,
 });
 
 export const updateProfileSchema = createProfileSchema.partial();
@@ -27,6 +33,7 @@ export interface ProfileDTO {
   output_format: string;
   include_protocols?: string[];
   exclude_keywords?: string[];
+  clash_config?: ClashConfig;
   access_count: number;
   last_accessed_at?: number;
   created_at: number;
@@ -56,9 +63,9 @@ export function createProfile(input: CreateProfileInput, userId: string): Profil
     database.prepare(`
       INSERT INTO profiles (
         id, user_id, name, description, output_format,
-        include_protocols, exclude_keywords, access_count,
+        include_protocols, exclude_keywords, clash_config, access_count,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       profileId,
       userId,
@@ -67,6 +74,7 @@ export function createProfile(input: CreateProfileInput, userId: string): Profil
       input.output_format || 'clash',
       input.include_protocols ? JSON.stringify(input.include_protocols) : null,
       input.exclude_keywords ? JSON.stringify(input.exclude_keywords) : null,
+      input.clash_config ? JSON.stringify(input.clash_config) : null,
       0,
       now,
       now
@@ -204,6 +212,10 @@ export function updateProfile(id: string, userId: string, input: UpdateProfileIn
       updates.push('exclude_keywords = ?');
       params.push(input.exclude_keywords ? JSON.stringify(input.exclude_keywords) : null);
     }
+    if (input.clash_config !== undefined) {
+      updates.push('clash_config = ?');
+      params.push(input.clash_config ? JSON.stringify(input.clash_config) : null);
+    }
 
     if (updates.length === 0) return toDTO(profile);
 
@@ -291,6 +303,7 @@ function toDTO(dbProfile: any): ProfileDTO {
     output_format: dbProfile.output_format,
     include_protocols: dbProfile.include_protocols ? JSON.parse(dbProfile.include_protocols) : undefined,
     exclude_keywords: dbProfile.exclude_keywords ? JSON.parse(dbProfile.exclude_keywords) : undefined,
+    clash_config: dbProfile.clash_config ? JSON.parse(dbProfile.clash_config) : undefined,
     access_count: dbProfile.access_count || 0,
     last_accessed_at: dbProfile.last_accessed_at,
     created_at: dbProfile.created_at,

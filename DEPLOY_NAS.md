@@ -1,335 +1,784 @@
-# IPSHub – 群晖 NAS Docker 部署指南
+# IPSHub 群晖 NAS Docker 部署指南
 
-## 架构概览
-
-```
-宿主机 NAS
-  ├─ :8088  → ipshub-frontend (nginx:1.27-alpine)
-  │               ├─ / → React SPA 静态文件
-  │               ├─ /api/  → 反向代理 → ipshub-backend:8080
-  │               ├─ /sub/  → 反向代理 → ipshub-backend:8080
-  │               └─ /health → 反向代理 → ipshub-backend:8080
-  └─ (内部) → ipshub-backend (node:20-alpine)
-                  └─ 数据持久化 → ./data/ipshub.db
-```
+> 适用场景：本地开发完成后，部署到群晖 NAS / DSM / Container Manager。  
+> 推荐方式：**本地构建镜像 → 导出镜像包 → 上传 NAS → NAS 导入镜像 → docker compose 启动**。  
+> 不推荐：在 NAS 上直接 `docker compose up -d --build`，因为 NAS 编译 Node 原生依赖较慢，尤其是 `better-sqlite3`、`node-gyp` 这类依赖。
 
 ---
 
-## 一、NAS 目录建议
+## 1. 部署目标
 
-```
+本部署方案目标：
+
+- 本地完成 Docker 镜像构建，减少 NAS CPU/内存压力。
+- NAS 只负责运行容器，不负责源码编译。
+- 支持前端、后端双镜像部署。
+- 支持数据、配置、日志持久化。
+- 支持后续版本快速更新与回滚。
+
+推荐最终运行结构：
+
+```text
 /volume1/docker/ipshub/
-├── data/            # ← SQLite 数据库（自动创建）
-├── config/          # ← 可选配置覆盖（自动创建）
-├── docker-compose.yml
-├── Dockerfile
-├── nginx.conf
-└── .env             # ← 从 .env.example 复制并修改
-```
-
-> 建议使用独立目录，避免与其他容器文件混用，也方便整体备份。
-
----
-
-## 二、上传代码到 NAS
-
-### 方式 A：Git（推荐）
-
-通过 SSH 登录 NAS：
-
-```bash
-ssh admin@192.168.1.100
-mkdir -p /volume1/docker/ipshub
-cd /volume1/docker/ipshub
-git clone https://github.com/yourname/ipshub.git .
-```
-
-### 方式 B：Synology File Station / SFTP
-
-1. 在本地打包项目（排除 `node_modules`、`dist`、`data`）：
-   ```bash
-   # 在开发机上执行
-   cd /path/to/IPSHub
-   tar --exclude='node_modules' --exclude='dist' --exclude='data' \
-       --exclude='.git' -czf ipshub.tar.gz .
-   ```
-2. 通过 File Station 上传 `ipshub.tar.gz` 到 `/volume1/docker/ipshub/`
-3. SSH 登录 NAS 解压：
-   ```bash
-   cd /volume1/docker/ipshub && tar -xzf ipshub.tar.gz
-   ```
-
-### 方式 C：rsync（增量同步，适合后续更新）
-
-```bash
-rsync -avz --exclude='node_modules' --exclude='dist' --exclude='data' \
-  --exclude='.git' \
-  /local/path/to/IPSHub/ \
-  admin@192.168.1.100:/volume1/docker/ipshub/
+├── docker-compose.prod.yml
+├── .env
+├── data/
+├── config/
+├── logs/
+├── backups/
+└── images/
+    └── ipshub-images-latest.tar.gz
 ```
 
 ---
 
-## 三、首次启动
+## 2. 前置条件
 
-### 1. 确认 Docker Compose 版本
+### 2.1 本地机器要求
 
-```bash
-docker compose version   # 群晖 DSM 7.2+ 支持 docker compose (V2)
-# 如果提示命令不存在，使用旧版:
-docker-compose version
-```
-
-### 2. 创建并填写 `.env`
+本地需要安装：
 
 ```bash
-cd /volume1/docker/ipshub
-cp .env.example .env
-vi .env    # 或用 nano
+docker --version
+docker buildx version
 ```
 
-**必须修改的字段：**
+建议本地使用 Docker Desktop。
 
-| 变量 | 说明 | 示例 |
-|------|------|------|
-| `APP_BASE_URL` | NAS 对外暴露的地址，订阅链接会使用此 URL | `http://192.168.1.100:8088` |
-| `APP_SECRET` | Session 签名密钥，随机 32 字节 hex | 见下方生成命令 |
-| `ADMIN_PASSWORD` | 管理员密码，首次启动后写入数据库 | `MyStr0ngPass!` |
+### 2.2 NAS 要求
 
-生成 `APP_SECRET`：
+NAS 需要安装：
+
+- DSM 7.x
+- Container Manager
+- SSH 已启用
+- 当前 SSH 用户具备 `sudo docker` 权限
+
+NAS 上验证 Docker：
 
 ```bash
-# 在 NAS 上执行（需要 Docker 已安装 node）
-docker run --rm node:20-alpine \
-  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+sudo docker ps
 ```
 
-### 3. 一键构建并启动
+如果出现 Docker socket 权限问题，使用：
 
 ```bash
-cd /volume1/docker/ipshub
-docker compose up -d --build
+sudo docker ps
 ```
 
-> 首次构建需下载基础镜像并编译，耗时约 5–10 分钟（取决于网络和 NAS 性能）。
-
-### 4. 确认服务运行
-
-```bash
-docker compose ps
-# 预期输出:
-# NAME                STATUS          PORTS
-# ipshub-backend      running (healthy)
-# ipshub-frontend     running (healthy)   0.0.0.0:8088->80/tcp
-```
-
-浏览器访问：`http://NAS_IP:8088`
+不要直接用普通用户执行 `docker ps`，除非已经配置好 Docker 用户组权限。
 
 ---
 
-## 四、日志查看
+## 3. 确认 NAS CPU 架构
+
+在 NAS 上执行：
 
 ```bash
-# 实时跟踪两个服务的日志
-docker compose logs -f
-
-# 仅查看后端日志（API、错误、Provider 刷新）
-docker compose logs -f backend
-
-# 仅查看前端日志（nginx 访问日志）
-docker compose logs -f frontend
-
-# 查看最近 100 行
-docker compose logs --tail=100 backend
+uname -m
 ```
+
+常见结果：
+
+```text
+x86_64
+```
+
+对应本地构建参数：
+
+```bash
+--platform linux/amd64
+```
+
+如果返回：
+
+```text
+aarch64
+```
+
+对应本地构建参数：
+
+```bash
+--platform linux/arm64
+```
+
+> 你的 NAS 如果之前构建日志里出现 `linux | x64`，一般就是 `linux/amd64`。
 
 ---
 
-## 五、停止 / 重启 / 更新
+## 4. 本地构建镜像
+
+在本地项目根目录执行。
+
+### 4.1 构建后端镜像
 
 ```bash
-# 停止（保留容器和数据）
-docker compose stop
-
-# 完全删除容器（数据在 ./data/ 中，不受影响）
-docker compose down
-
-# 重启服务
-docker compose restart
-
-# 更新代码后重新构建并热替换
-git pull                        # 或 rsync 更新文件
-docker compose up -d --build    # 重新构建镜像并重启
+docker buildx build \
+  --platform linux/amd64 \
+  --target backend \
+  -t ipshub-backend:latest \
+  --load \
+  .
 ```
 
----
-
-## 六、确认订阅链接使用正确的地址
-
-订阅链接由后端根据 `APP_BASE_URL` 环境变量生成。
-
-**检查当前配置：**
+### 4.2 构建前端镜像
 
 ```bash
-# 查看后端实际读取到的 APP_BASE_URL
-docker compose exec backend sh -c 'echo $APP_BASE_URL'
+docker buildx build \
+  --platform linux/amd64 \
+  --target frontend \
+  -t ipshub-frontend:latest \
+  --load \
+  .
 ```
 
-**前端获取配置的接口：**
-
-```
-GET http://NAS_IP:8088/api/config
-# 返回: {"baseUrl":"http://192.168.1.100:8088"}
-```
-
-**场景示例：**
-
-| 访问方式 | `APP_BASE_URL` 值 | `COOKIE_SECURE` |
-|----------|-------------------|-----------------|
-| NAS 内网 IP，无 TLS | `http://192.168.1.100:8088` | `false` |
-| NAS 群晖反向代理，自定义域名 + HTTPS | `https://sub.example.com` | `true` |
-| NAS 端口转发，公网 IP | `http://1.2.3.4:8088` | `false` |
-
-修改后需重启后端：
+### 4.3 验证本地镜像
 
 ```bash
-# 修改 .env 中的 APP_BASE_URL，然后：
-docker compose up -d backend   # 仅重建后端，前端不需要重建
+docker images | grep ipshub
+```
+
+预期看到：
+
+```text
+ipshub-backend     latest
+ipshub-frontend    latest
 ```
 
 ---
 
-## 七、常见问题排查
+## 5. 导出镜像包
 
-### ① 端口不通（浏览器无法访问 `http://NAS_IP:8088`）
+本地执行：
 
 ```bash
-# 1. 确认容器端口绑定
-docker compose ps
-docker port ipshub-frontend
-
-# 2. 确认 NAS 防火墙开放了 8088 端口
-# 群晖路径：控制面板 → 安全性 → 防火墙 → 新增规则
-
-# 3. 确认端口未被占用
-ss -tlnp | grep 8088
+docker save ipshub-backend:latest ipshub-frontend:latest | gzip > ipshub-images-latest.tar.gz
 ```
 
-### ② 容器启动失败（`backend` 一直 restarting）
+检查文件大小：
 
 ```bash
-# 查看启动错误
-docker compose logs backend --tail=50
-
-# 常见原因 1：APP_SECRET 未设置或仍是默认值
-# 解决：修改 .env 中的 APP_SECRET，然后 docker compose up -d backend
-
-# 常见原因 2：data/ 目录权限问题
-ls -la /volume1/docker/ipshub/data/
-# 如果权限不对：
-chmod 755 /volume1/docker/ipshub/data/
-
-# 常见原因 3：端口 8080 被占用（内部端口，不应发生）
-# 查看是否有其他容器使用了同一内部端口
-docker network inspect ipshub_default
+ls -lh ipshub-images-latest.tar.gz
 ```
 
-### ③ 环境变量未生效
+建议按版本号保留一份：
 
 ```bash
-# 确认 .env 文件存在且格式正确（等号两侧无空格，值无引号包裹）
-cat .env
-
-# 确认容器内部读取到的值
-docker compose exec backend env | grep APP_
-
-# 修改 .env 后必须重新创建容器才能生效
-docker compose up -d --force-recreate backend
+cp ipshub-images-latest.tar.gz ipshub-images-1.0.0.tar.gz
 ```
 
-### ④ 数据未持久化（重启后数据消失）
+---
+
+## 6. 上传镜像包到 NAS
+
+本地执行：
 
 ```bash
-# 确认 volume 挂载正确
-docker compose exec backend ls -la /app/data/
-# 预期看到: ipshub.db
+scp ipshub-images-latest.tar.gz your_user@NAS_IP:/volume1/docker/ipshub/images/
+```
 
-# 检查宿主机目录是否存在数据
-ls -la /volume1/docker/ipshub/data/
+示例：
 
-# 如果 data/ 目录不存在，手动创建后重启
+```bash
+scp ipshub-images-latest.tar.gz martin@192.168.1.10:/volume1/docker/ipshub/images/
+```
+
+如果 NAS 上还没有目录，先 SSH 到 NAS 创建：
+
+```bash
+mkdir -p /volume1/docker/ipshub/images
 mkdir -p /volume1/docker/ipshub/data
-docker compose up -d backend
-```
-
-### ⑤ 登录后立即跳回登录页（Cookie 问题）
-
-```bash
-# 检查 COOKIE_SECURE 配置
-# 如果用 http:// 访问（无 TLS），COOKIE_SECURE 必须为 false
-grep COOKIE_SECURE .env
-# 应该是: COOKIE_SECURE=false
-
-# 修改后重启后端
-docker compose up -d --force-recreate backend
-```
-
-### ⑥ 前端显示空白 / API 请求 502
-
-```bash
-# 502 表示 nginx 无法连接到后端，检查后端健康状态
-docker compose ps
-
-# 后端健康检查日志
-docker compose logs backend --tail=30
-
-# 测试后端直接响应（临时暴露后端端口调试）
-# 修改 docker-compose.yml，在 backend 下加 ports: ["8089:8080"]
-# 然后访问 http://NAS_IP:8089/health
-```
-
-### ⑦ 构建失败（pnpm 相关错误）
-
-```bash
-# 清理 Docker 构建缓存后重试
-docker builder prune -f
-docker compose build --no-cache
+mkdir -p /volume1/docker/ipshub/config
+mkdir -p /volume1/docker/ipshub/logs
+mkdir -p /volume1/docker/ipshub/backups
 ```
 
 ---
 
-## 八、备份与恢复
+## 7. NAS 导入镜像
 
-### 备份
+SSH 登录 NAS：
 
 ```bash
-# 只需备份 data/ 目录（SQLite 数据库）和 .env 文件
-tar -czf ipshub-backup-$(date +%Y%m%d).tar.gz \
-    /volume1/docker/ipshub/data \
-    /volume1/docker/ipshub/.env
+ssh your_user@NAS_IP
 ```
 
-### 恢复
+进入部署目录：
 
 ```bash
-# 停止服务，还原数据，重启
-docker compose down
-tar -xzf ipshub-backup-YYYYMMDD.tar.gz -C /
-docker compose up -d
+cd /volume1/docker/ipshub
+```
+
+导入镜像：
+
+```bash
+gunzip -c images/ipshub-images-latest.tar.gz | sudo docker load
+```
+
+检查镜像：
+
+```bash
+sudo docker images | grep ipshub
+```
+
+预期看到：
+
+```text
+ipshub-backend     latest
+ipshub-frontend    latest
 ```
 
 ---
 
-## 九、通过群晖反向代理启用 HTTPS（可选）
+## 8. NAS 生产 Compose 文件
 
-1. 群晖 DSM → **控制面板 → 登录门户 → 高级 → 反向代理服务器**
-2. 新增规则：
-   - 来源：`HTTPS 443`，主机名：`sub.example.com`
-   - 目标：`HTTP 127.0.0.1:8088`
-3. 申请并绑定 Let's Encrypt 证书（DSM 内置向导）
-4. 修改 `.env`：
-   ```bash
-   APP_BASE_URL=https://sub.example.com
-   COOKIE_SECURE=true
-   ```
-5. 重建后端容器：`docker compose up -d --force-recreate backend`
+在 NAS 上创建：
+
+```bash
+cd /volume1/docker/ipshub
+nano docker-compose.prod.yml
+```
+
+写入以下内容：
+
+```yaml
+services:
+  ipshub-backend:
+    image: ipshub-backend:latest
+    container_name: ipshub-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
+    networks:
+      - ipshub-net
+
+  ipshub-frontend:
+    image: ipshub-frontend:latest
+    container_name: ipshub-frontend
+    restart: unless-stopped
+    ports:
+      - "8088:80"
+    depends_on:
+      - ipshub-backend
+    networks:
+      - ipshub-net
+
+networks:
+  ipshub-net:
+    driver: bridge
+```
+
+关键点：
+
+- NAS 上的 `docker-compose.prod.yml` **不要写 `build:`**。
+- 只使用 `image:` 引用已经导入的镜像。
+- 这样启动时不会在 NAS 上重新编译。
+
+---
+
+## 9. 配置 .env
+
+在 NAS 上创建：
+
+```bash
+cd /volume1/docker/ipshub
+nano .env
+```
+
+示例：
+
+```env
+NODE_ENV=production
+PORT=8080
+DATA_DIR=/app/data
+CONFIG_DIR=/app/config
+LOG_DIR=/app/logs
+
+# 按实际情况修改
+JWT_SECRET=please-change-this-secret
+SUBSCRIPTION_REFRESH_INTERVAL=3600
+```
+
+注意：
+
+- 不要把本地开发环境的敏感配置直接暴露到公网。
+- 如果有 token、secret、订阅密钥，统一放 `.env` 或 NAS 的私有配置目录。
+
+---
+
+## 10. 启动服务
+
+在 NAS 上执行：
+
+```bash
+cd /volume1/docker/ipshub
+sudo docker compose -f docker-compose.prod.yml up -d
+```
+
+查看容器状态：
+
+```bash
+sudo docker compose -f docker-compose.prod.yml ps
+```
+
+查看日志：
+
+```bash
+sudo docker compose -f docker-compose.prod.yml logs -f
+```
+
+只看后端日志：
+
+```bash
+sudo docker logs -f ipshub-backend
+```
+
+只看前端日志：
+
+```bash
+sudo docker logs -f ipshub-frontend
+```
+
+---
+
+## 11. 访问服务
+
+前端访问地址：
+
+```text
+http://NAS_IP:8088
+```
+
+后端健康检查：
+
+```text
+http://NAS_IP:8080/health
+```
+
+如果配置了群晖反向代理或域名，最终可以使用：
+
+```text
+https://your-domain.com
+```
+
+Clash / Loon 订阅地址不要再使用本地开发地址：
+
+```text
+http://localhost:5173/sub/clash/xxx?token=xxx
+```
+
+需要改成 NAS 地址：
+
+```text
+http://NAS_IP:8088/sub/clash/xxx?token=xxx
+```
+
+或者域名地址：
+
+```text
+https://your-domain.com/sub/clash/xxx?token=xxx
+```
+
+---
+
+## 12. 后续更新流程
+
+### 12.1 本地重新构建
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  --target backend \
+  -t ipshub-backend:latest \
+  --load \
+  .
+
+
+docker buildx build \
+  --platform linux/amd64 \
+  --target frontend \
+  -t ipshub-frontend:latest \
+  --load \
+  .
+```
+
+### 12.2 本地导出镜像包
+
+```bash
+docker save ipshub-backend:latest ipshub-frontend:latest | gzip > ipshub-images-latest.tar.gz
+```
+
+### 12.3 上传到 NAS
+
+```bash
+scp ipshub-images-latest.tar.gz your_user@NAS_IP:/volume1/docker/ipshub/images/
+```
+
+### 12.4 NAS 导入新镜像
+
+```bash
+cd /volume1/docker/ipshub
+gunzip -c images/ipshub-images-latest.tar.gz | sudo docker load
+```
+
+### 12.5 重启服务
+
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate
+```
+
+### 12.6 查看日志
+
+```bash
+sudo docker compose -f docker-compose.prod.yml logs -f
+```
+
+---
+
+## 13. 版本化发布方式
+
+推荐发布时保留版本号，方便回滚。
+
+### 13.1 本地构建版本镜像
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  --target backend \
+  -t ipshub-backend:1.0.1 \
+  -t ipshub-backend:latest \
+  --load \
+  .
+
+
+docker buildx build \
+  --platform linux/amd64 \
+  --target frontend \
+  -t ipshub-frontend:1.0.1 \
+  -t ipshub-frontend:latest \
+  --load \
+  .
+```
+
+### 13.2 导出指定版本
+
+```bash
+docker save ipshub-backend:1.0.1 ipshub-frontend:1.0.1 | gzip > ipshub-images-1.0.1.tar.gz
+```
+
+### 13.3 NAS 使用指定版本
+
+修改 `docker-compose.prod.yml`：
+
+```yaml
+services:
+  ipshub-backend:
+    image: ipshub-backend:1.0.1
+
+  ipshub-frontend:
+    image: ipshub-frontend:1.0.1
+```
+
+启动：
+
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d
+```
+
+---
+
+## 14. 回滚方案
+
+如果新版本异常，先确认旧版本镜像是否还在：
+
+```bash
+sudo docker images | grep ipshub
+```
+
+修改 `docker-compose.prod.yml`：
+
+```yaml
+services:
+  ipshub-backend:
+    image: ipshub-backend:1.0.0
+
+  ipshub-frontend:
+    image: ipshub-frontend:1.0.0
+```
+
+重新启动：
+
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate
+```
+
+查看日志：
+
+```bash
+sudo docker compose -f docker-compose.prod.yml logs -f
+```
+
+---
+
+## 15. 常见问题排查
+
+### 15.1 NAS 上执行 docker 报 permission denied
+
+错误示例：
+
+```text
+permission denied while trying to connect to the Docker daemon socket
+```
+
+处理方式：
+
+```bash
+sudo docker ps
+sudo docker compose -f docker-compose.prod.yml ps
+```
+
+如果 `sudo` 可以执行，说明只是当前用户没有 Docker socket 权限。
+
+---
+
+### 15.2 不小心又在 NAS 上 build 了
+
+检查 `docker-compose.prod.yml` 是否还有：
+
+```yaml
+build:
+```
+
+生产 compose 里应该只保留：
+
+```yaml
+image: ipshub-backend:latest
+image: ipshub-frontend:latest
+```
+
+启动时不要用：
+
+```bash
+sudo docker compose up -d --build
+```
+
+应该用：
+
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d
+```
+
+---
+
+### 15.3 启动后访问不了前端
+
+检查容器状态：
+
+```bash
+sudo docker ps
+```
+
+检查前端日志：
+
+```bash
+sudo docker logs -f ipshub-frontend
+```
+
+检查端口是否映射：
+
+```bash
+sudo docker port ipshub-frontend
+```
+
+确认浏览器访问：
+
+```text
+http://NAS_IP:8088
+```
+
+同时确认 DSM 防火墙是否放行 `8088`。
+
+---
+
+### 15.4 后端健康检查失败
+
+检查后端日志：
+
+```bash
+sudo docker logs -f ipshub-backend
+```
+
+进入容器检查：
+
+```bash
+sudo docker exec -it ipshub-backend sh
+```
+
+容器内检查端口：
+
+```bash
+wget -qO- http://localhost:8080/health
+```
+
+如果没有 `wget`，需要确认 Dockerfile runtime stage 是否安装了 `wget`。
+
+---
+
+### 15.5 上传到 NAS 后报 exec format error
+
+通常是镜像架构不匹配。
+
+NAS 是 `x86_64` 时，本地必须用：
+
+```bash
+--platform linux/amd64
+```
+
+检查镜像架构：
+
+```bash
+sudo docker inspect ipshub-backend:latest | grep Architecture
+```
+
+预期：
+
+```text
+"Architecture": "amd64"
+```
+
+---
+
+### 15.6 better-sqlite3 / node-gyp 构建慢或失败
+
+这是为什么推荐本地构建，而不是 NAS 构建。
+
+如果必须在 Dockerfile 里处理 native build 依赖，Alpine 需要：
+
+```dockerfile
+RUN apk add --no-cache python3 make g++ sqlite-dev
+```
+
+如果使用 Debian 镜像，需要：
+
+```dockerfile
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    sqlite3 \
+    libsqlite3-dev \
+    dumb-init \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+但推荐做法仍然是：**本地构建镜像，NAS 只运行镜像**。
+
+---
+
+## 16. 一键发布命令参考
+
+可以在本地创建脚本：
+
+```bash
+nano deploy-nas.sh
+```
+
+内容：
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+NAS_USER="your_user"
+NAS_HOST="NAS_IP"
+NAS_DIR="/volume1/docker/ipshub"
+PLATFORM="linux/amd64"
+VERSION="latest"
+
+IMAGE_BACKEND="ipshub-backend:${VERSION}"
+IMAGE_FRONTEND="ipshub-frontend:${VERSION}"
+PACKAGE="ipshub-images-${VERSION}.tar.gz"
+
+echo "[1/5] Build backend image"
+docker buildx build \
+  --platform "${PLATFORM}" \
+  --target backend \
+  -t "${IMAGE_BACKEND}" \
+  --load \
+  .
+
+echo "[2/5] Build frontend image"
+docker buildx build \
+  --platform "${PLATFORM}" \
+  --target frontend \
+  -t "${IMAGE_FRONTEND}" \
+  --load \
+  .
+
+echo "[3/5] Save images"
+docker save "${IMAGE_BACKEND}" "${IMAGE_FRONTEND}" | gzip > "${PACKAGE}"
+
+echo "[4/5] Upload package to NAS"
+scp "${PACKAGE}" "${NAS_USER}@${NAS_HOST}:${NAS_DIR}/images/"
+
+echo "[5/5] Load and restart on NAS"
+ssh "${NAS_USER}@${NAS_HOST}" "cd ${NAS_DIR} && gunzip -c images/${PACKAGE} | sudo docker load && sudo docker compose -f docker-compose.prod.yml up -d --force-recreate && sudo docker compose -f docker-compose.prod.yml ps"
+
+echo "Deploy completed."
+```
+
+授权：
+
+```bash
+chmod +x deploy-nas.sh
+```
+
+执行：
+
+```bash
+./deploy-nas.sh
+```
+
+---
+
+## 17. 最小部署命令汇总
+
+### 本地执行
+
+```bash
+docker buildx build --platform linux/amd64 --target backend -t ipshub-backend:latest --load .
+docker buildx build --platform linux/amd64 --target frontend -t ipshub-frontend:latest --load .
+docker save ipshub-backend:latest ipshub-frontend:latest | gzip > ipshub-images-latest.tar.gz
+scp ipshub-images-latest.tar.gz your_user@NAS_IP:/volume1/docker/ipshub/images/
+```
+
+### NAS 执行
+
+```bash
+cd /volume1/docker/ipshub
+gunzip -c images/ipshub-images-latest.tar.gz | sudo docker load
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate
+sudo docker compose -f docker-compose.prod.yml logs -f
+```
+
+---
+
+## 18. 最终原则
+
+生产部署时保持以下原则：
+
+```text
+本地负责 build
+NAS 负责 run
+Compose 不写 build
+数据目录必须挂载
+每次发布保留版本号
+异常时通过切换 image tag 回滚
+```

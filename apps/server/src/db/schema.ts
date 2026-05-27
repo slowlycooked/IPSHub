@@ -80,6 +80,7 @@ export const SCHEMA = {
       include_protocols TEXT,
       exclude_keywords TEXT,
       rename_rules TEXT,
+      clash_config TEXT,
       access_count INTEGER DEFAULT 0,
       last_accessed_at INTEGER,
       created_at INTEGER NOT NULL,

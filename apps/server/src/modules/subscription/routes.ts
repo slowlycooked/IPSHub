@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { validateToken, recordAccess, getProfileById } from '@/modules/profiles/service';
 import { getNodes } from '@/modules/nodes/service';
-import { renderClash } from '@/core/renderers/renderClash';
+import { renderClashProfile } from '@/core/renderers/renderClashProfile';
 import { renderProvider } from '@/core/renderers/renderProvider';
 import { renderLoon } from '@/core/renderers/renderLoon';
 import { renderRaw } from '@/core/renderers/renderRaw';
@@ -117,7 +117,7 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         return context;
       }
 
-      const content = renderClash(context.nodes);
+      const content = renderClashProfile(context.profile.clash_config, context.nodes);
       reply.type('application/yaml');
       reply.header('Content-Disposition', `attachment; filename="${context.profile.name}.yaml"`);
       return content;

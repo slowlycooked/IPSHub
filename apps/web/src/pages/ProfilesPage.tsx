@@ -3,7 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { profilesApi, type ProfilePayload } from '@/api/profiles';
 import { fetchServerConfig } from '@/api/config';
 import { queryClient } from '@/api/queryClient';
-import type { OutputType, Profile, ProfileUrls } from '@/types/profile';
+import type { OutputType, Profile, ProfileUrls, ClashConfig } from '@/types/profile';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -17,6 +17,7 @@ import { Modal } from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, truncate } from '@/utils/format';
+import { ClashConfigEditor, buildDefaultClashConfig, type ClashConfigValidationError } from '@/components/profiles/ClashConfigEditor';
 
 interface FormState {
   name: string;
@@ -24,6 +25,7 @@ interface FormState {
   output_format: OutputType;
   include_protocols: string;
   exclude_keywords: string;
+  clash_config: ClashConfig;
 }
 
 interface IssuedTokenState {
@@ -38,6 +40,7 @@ const defaultForm: FormState = {
   output_format: 'clash',
   include_protocols: '',
   exclude_keywords: '过期,剩余,Traffic,Expire',
+  clash_config: buildDefaultClashConfig(),
 };
 
 function splitCsv(value: string): string[] | undefined {
@@ -56,6 +59,7 @@ function toPayload(form: FormState): ProfilePayload {
     output_format: form.output_format,
     include_protocols: splitCsv(form.include_protocols),
     exclude_keywords: splitCsv(form.exclude_keywords),
+    clash_config: form.clash_config,
   };
 }
 
@@ -97,6 +101,155 @@ const URL_LABELS: Record<keyof ProfileUrls, string> = {
 
 function hasUsableToken(token: string | undefined): token is string {
   return typeof token === 'string' && token.trim().length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Profile form drawer — split into tabs for basic info and Clash Config
+// ---------------------------------------------------------------------------
+
+type FormDrawerTab = 'basic' | 'clash';
+
+interface FormDrawerProps {
+  open: boolean;
+  selected: Profile | null;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  onClose: () => void;
+  onSave: () => void;
+  isSaving: boolean;
+}
+
+function FormDrawer({ open, selected, form, setForm, onClose, onSave, isSaving }: FormDrawerProps) {
+  const [activeTab, setActiveTab] = useState<FormDrawerTab>('basic');
+  const [clashValidationErrors, setClashValidationErrors] = useState<ClashConfigValidationError[]>([]);
+
+  const hasClashErrors = clashValidationErrors.length > 0;
+
+  const handleSave = () => {
+    if (hasClashErrors) return;
+    onSave();
+  };
+
+  return (
+    <Drawer
+      open={open}
+      title={selected ? 'Edit Profile' : 'Add Profile'}
+      onClose={onClose}
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          {hasClashErrors && (
+            <p className="text-xs text-danger flex items-center gap-1">
+              <span>⚠</span> Fix YAML errors in Clash Config before saving
+            </p>
+          )}
+          <div className="flex gap-3 ml-auto">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button
+              variant="primary"
+              isLoading={isSaving}
+              onClick={handleSave}
+              disabled={hasClashErrors}
+              title={hasClashErrors ? 'Fix YAML errors before saving' : undefined}
+            >
+              Save Profile
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-line mb-4 -mt-1">
+        {(['basic', 'clash'] as const).map((tab) => (
+          <button
+            key={tab}
+            className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+              activeTab === tab
+                ? 'border-b-2 border-primary text-primary bg-surface-1'
+                : tab === 'clash' && hasClashErrors
+                ? 'text-danger hover:text-danger'
+                : 'text-text-muted hover:text-text'
+            }`}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab === 'basic' ? 'Basic Settings' : 'Clash Config'}
+            {tab === 'clash' && hasClashErrors && <span className="ml-1 text-danger">⚠</span>}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'basic' && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-muted mb-2">Name</label>
+            <input
+              className="ip-input"
+              value={form.name}
+              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g., Gaming, Work"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-muted mb-2">Description</label>
+            <input
+              className="ip-input"
+              value={form.description}
+              onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder="Optional profile description"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-muted mb-2">Output Format</label>
+            <select
+              className="ip-input"
+              value={form.output_format}
+              onChange={(e) => setForm((prev) => ({ ...prev, output_format: e.target.value as OutputType }))}
+            >
+              <option value="clash">Clash YAML</option>
+              <option value="clash_provider">Clash Provider</option>
+              <option value="loon">Loon</option>
+              <option value="raw">Raw (Shadowsocks URI)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-muted mb-2">Include Protocols</label>
+            <input
+              className="ip-input"
+              placeholder="ss, vmess, trojan (comma-separated)"
+              value={form.include_protocols}
+              onChange={(e) => setForm((prev) => ({ ...prev, include_protocols: e.target.value }))}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-muted mb-2">Exclude Keywords</label>
+            <input
+              className="ip-input"
+              placeholder="过期, 剩余, Traffic (comma-separated)"
+              value={form.exclude_keywords}
+              onChange={(e) => setForm((prev) => ({ ...prev, exclude_keywords: e.target.value }))}
+            />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'clash' && (
+        <div>
+          <p className="text-xs text-text-dim mb-3">
+            Configure the proxy groups and rules for the Clash subscription output.
+            Leave at default if unsure — the template works out of the box.
+          </p>
+          <ClashConfigEditor
+            value={form.clash_config}
+            onChange={(cfg) => setForm((prev) => ({ ...prev, clash_config: cfg }))}
+            onValidationChange={setClashValidationErrors}
+          />
+        </div>
+      )}
+    </Drawer>
+  );
 }
 
 export function ProfilesPage() {
@@ -193,6 +346,7 @@ export function ProfilesPage() {
       output_format: profile.output_format,
       include_protocols: profile.include_protocols?.join(', ') || '',
       exclude_keywords: profile.exclude_keywords?.join(', ') || '',
+      clash_config: profile.clash_config ?? buildDefaultClashConfig(),
     });
     setOpenForm(true);
   };
@@ -328,81 +482,15 @@ export function ProfilesPage() {
       )}
 
       {/* Form Drawer */}
-      <Drawer
+      <FormDrawer
         open={openForm}
-        title={selected ? 'Edit Profile' : 'Add Profile'}
+        selected={selected}
+        form={form}
+        setForm={setForm}
         onClose={() => setOpenForm(false)}
-        footer={
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setOpenForm(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              isLoading={createMutation.isPending || updateMutation.isPending}
-              onClick={saveForm}
-            >
-              Save Profile
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text-muted mb-2">Name</label>
-            <input
-              className="ip-input"
-              value={form.name}
-              onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
-              placeholder="e.g., Gaming, Work"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-muted mb-2">Description</label>
-            <input
-              className="ip-input"
-              value={form.description}
-              onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Optional profile description"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-muted mb-2">Output Format</label>
-            <select
-              className="ip-input"
-              value={form.output_format}
-              onChange={(e) => setForm(prev => ({ ...prev, output_format: e.target.value as OutputType }))}
-            >
-              <option value="clash">Clash YAML</option>
-              <option value="clash_provider">Clash Provider</option>
-              <option value="loon">Loon</option>
-              <option value="raw">Raw (Shadowsocks URI)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-muted mb-2">Include Protocols</label>
-            <input
-              className="ip-input"
-              placeholder="ss, vmess, trojan (comma-separated)"
-              value={form.include_protocols}
-              onChange={(e) => setForm(prev => ({ ...prev, include_protocols: e.target.value }))}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text-muted mb-2">Exclude Keywords</label>
-            <input
-              className="ip-input"
-              placeholder="过期, 剩余, Traffic (comma-separated)"
-              value={form.exclude_keywords}
-              onChange={(e) => setForm(prev => ({ ...prev, exclude_keywords: e.target.value }))}
-            />
-          </div>
-        </div>
-      </Drawer>
+        onSave={saveForm}
+        isSaving={createMutation.isPending || updateMutation.isPending}
+      />
 
       {/* URLs Modal */}
       <Modal

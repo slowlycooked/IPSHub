@@ -199,6 +199,7 @@ function runMigrations(database: Database.Database): void {
   ensureColumn(database, 'access_logs', 'response_size', 'INTEGER');
   ensureColumn(database, 'access_logs', 'duration_ms', 'INTEGER');
   ensureColumn(database, 'refresh_jobs', 'duration_ms', 'INTEGER');
+  ensureColumn(database, 'profiles', 'clash_config', 'TEXT');
 }
 
 function ensureNodesTableShape(database: Database.Database): void {

@@ -16,6 +16,11 @@ services:
     build:
       context: .
       target: backend
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
+      # Disable provenance attestations — they balloon the OCI export and make
+      # `docker compose build` take 10+ minutes even for small images.
+      provenance: false
     container_name: ipshub-backend
     restart: unless-stopped
     entrypoint: ["/usr/bin/dumb-init", "--"]
@@ -55,6 +60,7 @@ services:
     build:
       context: .
       target: frontend
+      provenance: false
     container_name: ipshub-frontend
     restart: unless-stopped
     ports:

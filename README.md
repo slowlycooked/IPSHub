@@ -398,10 +398,15 @@ docker compose build
 
 | Stage | 基础镜像 | 作用 |
 |-------|----------|------|
-| `deps` | `node:22-alpine` | 安装全部 pnpm 依赖 |
-| `builder` | `deps` | 编译 TypeScript，构建 Vite SPA |
+| `web-deps` | `node:22-alpine` | 安装 Web 依赖（无 native 编译） |
+| `server-deps` | `node:22-alpine` | 安装 Server 依赖（编译 better-sqlite3） |
+| `web-builder` | `web-deps` | 构建 Vite SPA |
+| `server-builder` | `server-deps` | 编译 TypeScript 服务端 |
+| `singbox` | `alpine:3.20` | 下载 sing-box 二进制 |
 | `backend` | `node:22-alpine` | 生产运行时 + sing-box 二进制 |
 | `frontend` | `nginx:1.27-alpine` | 静态文件 + 反向代理 |
+
+> **构建优化**：`--target frontend` 只经过 `web-deps → web-builder` 两个阶段，不触发 `better-sqlite3` 的 C++ 编译，速度显著提升。
 
 > **网络提示**：sing-box 二进制从 GitHub Releases 下载，若网络受限可在构建前配置代理：
 > ```bash
