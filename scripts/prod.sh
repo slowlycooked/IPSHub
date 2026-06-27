@@ -176,7 +176,9 @@ start_service() {
   cd "$ROOT"
 
   nohup node "$ROOT/apps/server/dist/index.js" >>"$LOGFILE" 2>&1 &
-  echo "$!" > "$PIDFILE"
+  local pid="$!"
+  echo "$pid" > "$PIDFILE"
+  disown "$pid" 2>/dev/null || true
 
   if ! wait_for_health; then
     rm -f "$PIDFILE"
@@ -206,7 +208,7 @@ stop_service() {
     if ! kill -0 "$pid" 2>/dev/null; then
       rm -f "$PIDFILE"
       echo "$APP_NAME stopped"
-      exit 0
+      return 0
     fi
     sleep 1
   done
