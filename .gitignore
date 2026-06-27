@@ -6,6 +6,7 @@ package-lock.json
 # Build
 dist/
 build/
+public/
 *.tsbuildinfo
 
 # Logs
@@ -37,6 +38,7 @@ apps/server/data/
 
 # Dev scripts state
 scripts/.dev.pids
+.ipshub.pid
 
 # OS
 .DS_Store

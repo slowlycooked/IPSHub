@@ -9,6 +9,7 @@
     "dev": "pnpm -r --parallel dev",
     "dev:start": "bash scripts/dev-start.sh",
     "dev:stop": "bash scripts/dev-stop.sh",
+    "prod": "bash scripts/prod.sh",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",

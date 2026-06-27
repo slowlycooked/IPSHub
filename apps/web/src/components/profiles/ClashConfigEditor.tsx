@@ -16,6 +16,23 @@ import { Button } from '@/components/ui/Button';
 // Default template (mirrors backend buildDefaultClashConfig)
 // ---------------------------------------------------------------------------
 
+const DEFAULT_PROXY_POLICY = '🚀 节点选择';
+const LOYALSOLDIER_RULESET_BASE_URL =
+  'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release';
+
+function buildLoyalsoldierRuleProvider(
+  name: string,
+  behavior: 'domain' | 'ipcidr' | 'classical'
+): Record<string, unknown> {
+  return {
+    type: 'http',
+    behavior,
+    url: `${LOYALSOLDIER_RULESET_BASE_URL}/${name}.txt`,
+    path: `./ruleset/${name}.yaml`,
+    interval: 86400,
+  };
+}
+
 export function buildDefaultClashConfig(): ClashConfig {
   return {
     general: {
@@ -26,7 +43,7 @@ export function buildDefaultClashConfig(): ClashConfig {
     },
     proxyGroups: [
       {
-        name: '🚀 节点选择',
+        name: DEFAULT_PROXY_POLICY,
         type: 'select',
         source: { type: 'all' },
         includeDirect: true,
@@ -65,14 +82,38 @@ export function buildDefaultClashConfig(): ClashConfig {
         timeout: 5000,
       },
     ],
+    ruleProviders: {
+      reject: buildLoyalsoldierRuleProvider('reject', 'domain'),
+      icloud: buildLoyalsoldierRuleProvider('icloud', 'domain'),
+      apple: buildLoyalsoldierRuleProvider('apple', 'domain'),
+      google: buildLoyalsoldierRuleProvider('google', 'domain'),
+      proxy: buildLoyalsoldierRuleProvider('proxy', 'domain'),
+      direct: buildLoyalsoldierRuleProvider('direct', 'domain'),
+      private: buildLoyalsoldierRuleProvider('private', 'domain'),
+      gfw: buildLoyalsoldierRuleProvider('gfw', 'domain'),
+      'tld-not-cn': buildLoyalsoldierRuleProvider('tld-not-cn', 'domain'),
+      telegramcidr: buildLoyalsoldierRuleProvider('telegramcidr', 'ipcidr'),
+      cncidr: buildLoyalsoldierRuleProvider('cncidr', 'ipcidr'),
+      lancidr: buildLoyalsoldierRuleProvider('lancidr', 'ipcidr'),
+      applications: buildLoyalsoldierRuleProvider('applications', 'classical'),
+    },
     rules: [
-      { type: 'DOMAIN-SUFFIX', value: 'local', policy: 'DIRECT' },
-      { type: 'IP-CIDR', value: '127.0.0.0/8', policy: 'DIRECT', noResolve: true },
-      { type: 'IP-CIDR', value: '10.0.0.0/8', policy: 'DIRECT', noResolve: true },
-      { type: 'IP-CIDR', value: '172.16.0.0/12', policy: 'DIRECT', noResolve: true },
-      { type: 'IP-CIDR', value: '192.168.0.0/16', policy: 'DIRECT', noResolve: true },
+      { type: 'RULE-SET', value: 'applications', policy: 'DIRECT' },
+      { type: 'DOMAIN', value: 'clash.razord.top', policy: 'DIRECT' },
+      { type: 'DOMAIN', value: 'yacd.haishan.me', policy: 'DIRECT' },
+      { type: 'RULE-SET', value: 'private', policy: 'DIRECT' },
+      { type: 'RULE-SET', value: 'reject', policy: 'REJECT' },
+      { type: 'RULE-SET', value: 'icloud', policy: 'DIRECT' },
+      { type: 'RULE-SET', value: 'apple', policy: 'DIRECT' },
+      { type: 'RULE-SET', value: 'google', policy: DEFAULT_PROXY_POLICY },
+      { type: 'RULE-SET', value: 'proxy', policy: DEFAULT_PROXY_POLICY },
+      { type: 'RULE-SET', value: 'direct', policy: 'DIRECT' },
+      { type: 'RULE-SET', value: 'lancidr', policy: 'DIRECT' },
+      { type: 'RULE-SET', value: 'cncidr', policy: 'DIRECT' },
+      { type: 'RULE-SET', value: 'telegramcidr', policy: DEFAULT_PROXY_POLICY },
+      { type: 'GEOIP', value: 'LAN', policy: 'DIRECT', noResolve: true },
       { type: 'GEOIP', value: 'CN', policy: 'DIRECT', noResolve: true },
-      { type: 'MATCH', policy: '🚀 节点选择' },
+      { type: 'MATCH', policy: DEFAULT_PROXY_POLICY },
     ],
   };
 }

@@ -59,6 +59,16 @@ describe('buildDefaultClashConfig', () => {
     expect(last.type).toBe('MATCH');
   });
 
+  it('includes Loyalsoldier rule providers for Clash clients to download', () => {
+    const cfg = buildDefaultClashConfig();
+    expect(cfg.ruleProviders).toBeDefined();
+    expect(cfg.ruleProviders).toHaveProperty('reject');
+    expect(cfg.ruleProviders).toHaveProperty('proxy');
+    expect(cfg.ruleProviders).toHaveProperty('direct');
+    expect(cfg.ruleProviders).toHaveProperty('telegramcidr');
+    expect(cfg.rules.some((rule) => rule.type === 'RULE-SET' && rule.value === 'proxy')).toBe(true);
+  });
+
   it('all rules reference valid policies for default groups', () => {
     const cfg = buildDefaultClashConfig();
     const groupNames = new Set(cfg.proxyGroups.map((g) => g.name));
@@ -311,6 +321,36 @@ describe('renderClashProfile', () => {
     const parsed = parseYaml(yaml) as any;
     expect(parsed).toHaveProperty('rule-providers');
     expect(parsed['rule-providers']).toHaveProperty('reject-list');
+  });
+
+  it('renders default Loyalsoldier rule providers and RULE-SET rules', () => {
+    const yaml = renderClashProfile(null, baseNodes);
+    const parsed = parseYaml(yaml) as any;
+    expect(parsed['rule-providers']).toHaveProperty('reject');
+    expect(parsed['rule-providers']).toHaveProperty('applications');
+    expect(parsed.rules).toContain('RULE-SET,reject,REJECT');
+    expect(parsed.rules).toContain('RULE-SET,proxy,🚀 节点选择');
+  });
+
+  it('upgrades previously stored legacy default rules at render time', () => {
+    const legacyCfg: ClashConfig = {
+      general: { mode: 'rule', logLevel: 'info', allowLan: false, ipv6: false },
+      proxyGroups: buildDefaultClashConfig().proxyGroups,
+      rules: [
+        { type: 'DOMAIN-SUFFIX', value: 'local', policy: 'DIRECT' },
+        { type: 'IP-CIDR', value: '127.0.0.0/8', policy: 'DIRECT', noResolve: true },
+        { type: 'IP-CIDR', value: '10.0.0.0/8', policy: 'DIRECT', noResolve: true },
+        { type: 'IP-CIDR', value: '172.16.0.0/12', policy: 'DIRECT', noResolve: true },
+        { type: 'IP-CIDR', value: '192.168.0.0/16', policy: 'DIRECT', noResolve: true },
+        { type: 'GEOIP', value: 'CN', policy: 'DIRECT', noResolve: true },
+        { type: 'MATCH', policy: '🚀 节点选择' },
+      ],
+    };
+
+    const yaml = renderClashProfile(legacyCfg, baseNodes);
+    const parsed = parseYaml(yaml) as any;
+    expect(parsed['rule-providers']).toHaveProperty('proxy');
+    expect(parsed.rules).toContain('RULE-SET,telegramcidr,🚀 节点选择');
   });
 
   it('falls back to default config when custom config is invalid', () => {
