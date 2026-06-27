@@ -55,16 +55,20 @@ rebuild_native_deps() {
   pnpm --filter @ipshub/server rebuild better-sqlite3
 }
 
+load_better_sqlite3() {
+  cd "$ROOT/apps/server"
+  node -e "require('better-sqlite3')"
+}
+
 verify_native_deps() {
-  cd "$ROOT"
-  if node -e "require('better-sqlite3')" >/dev/null 2>&1; then
+  if load_better_sqlite3 >/dev/null 2>&1; then
     return 0
   fi
 
   echo "better-sqlite3 native binding is missing; rebuilding it for this host..."
   rebuild_native_deps
 
-  node -e "require('better-sqlite3')" >/dev/null 2>&1 || {
+  load_better_sqlite3 >/dev/null 2>&1 || {
     echo "Failed to load better-sqlite3 after rebuild." >&2
     echo "Check Node.js version with: node --version" >&2
     echo "Node.js 22 LTS is recommended for this project on macOS production hosts." >&2
