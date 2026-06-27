@@ -330,15 +330,26 @@ async function processNodePair(
   if (diagnosis.code === 'LIKELY_IPSHUB_CONVERSION_ISSUE' && pair.ipshub) {
     const rawOutbound = buildOutbound(pair.raw);
     const ipshubOutbound = buildOutbound(pair.ipshub);
-    log('conversion-debug', 'ERROR', 'Conversion issue confirmed — raw vs IPSHub outbound comparison', {
+    const fieldDiffs = diffs.map((d) => ({
+      field: d.field,
+      raw: d.rawValue,
+      ipshub: d.normalizedValue,
+      risk: d.risk,
+    }));
+    log('conversion-debug', 'ERROR', 'Conversion issue detected — raw vs IPSHub outbound comparison', {
       rawOutbound,
       ipshubOutbound,
-      fieldDiffs: diffs.map((d) => ({
-        field: d.field,
-        raw: d.rawValue,
-        ipshub: d.normalizedValue,
-        risk: d.risk,
-      })),
+      fieldDiffs,
+    });
+  }
+  // P1: When probes diverge but configs are identical, log for visibility at WARN level.
+  if (diagnosis.code === 'SING_BOX_PROBE_INCONSISTENCY' && pair.ipshub) {
+    const rawOutbound = buildOutbound(pair.raw);
+    const ipshubOutbound = buildOutbound(pair.ipshub);
+    log('conversion-debug', 'WARN', 'Probe inconsistency — raw succeeded, IPSHub failed, but outbounds are identical (likely transient)', {
+      rawOutbound,
+      ipshubOutbound,
+      fieldDiffs: [],
     });
   }
 

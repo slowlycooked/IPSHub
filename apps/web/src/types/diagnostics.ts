@@ -6,6 +6,7 @@ export type DiagnosisCode =
   | 'LIKELY_IPSHUB_RUNTIME_NETWORK_ISSUE'
   | 'SING_BOX_CONFIRMED_WORKING'
   | 'SING_BOX_CONFIRMED_FAILING'
+  | 'SING_BOX_PROBE_INCONSISTENCY'
   | 'PROVIDER_NODE_UNAVAILABLE'
   | 'INFO_NODE_NOT_TESTABLE'
   | 'UNKNOWN_NEEDS_MANUAL_REVIEW';
@@ -118,6 +119,7 @@ export const DIAGNOSIS_LABELS: Record<DiagnosisCode, string> = {
   LIKELY_IPSHUB_RUNTIME_NETWORK_ISSUE: 'IPSHub Runtime Network Issue',
   SING_BOX_CONFIRMED_WORKING: 'Sing-Box: Confirmed Working',
   SING_BOX_CONFIRMED_FAILING: 'Sing-Box: Confirmed Failing',
+  SING_BOX_PROBE_INCONSISTENCY: 'Sing-Box: Probe Inconsistency (Transient)',
   PROVIDER_NODE_UNAVAILABLE: 'Provider Node Unavailable',
   INFO_NODE_NOT_TESTABLE: 'Subscription Info Node',
   UNKNOWN_NEEDS_MANUAL_REVIEW: 'Unknown – Manual Review',
@@ -128,6 +130,7 @@ export const DIAGNOSIS_TONES: Record<DiagnosisCode, 'success' | 'warning' | 'dan
   SING_BOX_CONFIRMED_WORKING: 'success',
   LIKELY_PROVIDER_OR_NETWORK_ISSUE: 'danger',
   SING_BOX_CONFIRMED_FAILING: 'danger',
+  SING_BOX_PROBE_INCONSISTENCY: 'warning',
   PROVIDER_NODE_UNAVAILABLE: 'danger',
   LIKELY_IPSHUB_CONVERSION_ISSUE: 'warning',
   LIKELY_CLIENT_CONFIG_GENERATION_ISSUE: 'warning',

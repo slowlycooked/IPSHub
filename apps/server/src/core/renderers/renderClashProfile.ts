@@ -279,6 +279,11 @@ function renderWithConfig(
   const rules = config.rules.map(buildRuleString);
 
   const output: Record<string, unknown> = {
+    // Clash for Windows expects a full profile to define at least one listen port.
+    // Keep the same defaults as renderClash for broad client compatibility.
+    port: 7890,
+    'socks-port': 7891,
+    'mixed-port': 7890,
     mode: general.mode ?? 'rule',
     'log-level': general.logLevel ?? 'info',
     ipv6: general.ipv6 ?? false,
@@ -312,6 +317,9 @@ function renderSafeMinimal(
   proxyNames: string[]
 ): string {
   const output: Record<string, unknown> = {
+    port: 7890,
+    'socks-port': 7891,
+    'mixed-port': 7890,
     mode: 'rule',
     'log-level': 'info',
     ipv6: false,

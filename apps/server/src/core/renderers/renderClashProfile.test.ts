@@ -238,6 +238,14 @@ describe('renderClashProfile', () => {
     expect(parsed).toHaveProperty('rules');
   });
 
+  it('includes listen ports for Clash clients', () => {
+    const yaml = renderClashProfile(null, baseNodes);
+    const parsed = parseYaml(yaml) as any;
+    expect(parsed['mixed-port']).toBe(7890);
+    expect(parsed.port).toBe(7890);
+    expect(parsed['socks-port']).toBe(7891);
+  });
+
   it('outputs parseable YAML', () => {
     const yaml = renderClashProfile(null, baseNodes);
     expect(() => parseYaml(yaml)).not.toThrow();
