@@ -60,6 +60,30 @@ load_better_sqlite3() {
   node -e "require('better-sqlite3')"
 }
 
+health_url() {
+  echo "http://127.0.0.1:${SERVER_PORT}/health"
+}
+
+check_health() {
+  curl -fsS "$(health_url)" >/dev/null 2>&1
+}
+
+wait_for_health() {
+  for _ in {1..30}; do
+    if check_health; then
+      return 0
+    fi
+
+    if ! is_running; then
+      return 1
+    fi
+
+    sleep 1
+  done
+
+  return 1
+}
+
 verify_native_deps() {
   if load_better_sqlite3 >/dev/null 2>&1; then
     return 0
@@ -154,15 +178,16 @@ start_service() {
   nohup node "$ROOT/apps/server/dist/index.js" >>"$LOGFILE" 2>&1 &
   echo "$!" > "$PIDFILE"
 
-  sleep 1
-  if ! is_running; then
+  if ! wait_for_health; then
     rm -f "$PIDFILE"
-    die "$APP_NAME failed to start; inspect $LOGFILE"
+    echo "$APP_NAME failed to become healthy. Recent log output:" >&2
+    tail -n 40 "$LOGFILE" >&2 || true
+    die "health check failed at $(health_url)"
   fi
 
   echo "$APP_NAME started with PID $(cat "$PIDFILE")"
   echo "Log: $LOGFILE"
-  echo "Health: http://127.0.0.1:${SERVER_PORT}/health"
+  echo "Health: $(health_url)"
 }
 
 stop_service() {
@@ -195,7 +220,7 @@ status_service() {
   load_env
   if is_running; then
     echo "$APP_NAME is running with PID $(cat "$PIDFILE")"
-    echo "Health: http://127.0.0.1:${SERVER_PORT}/health"
+    echo "Health: $(health_url)"
   else
     rm -f "$PIDFILE"
     echo "$APP_NAME is not running"

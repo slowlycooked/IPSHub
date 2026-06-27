@@ -118,7 +118,7 @@ CMD ["node", "apps/server/dist/index.js"]
 FROM nginx:1.27-alpine AS frontend
 
 COPY --from=web-builder /app/apps/web/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

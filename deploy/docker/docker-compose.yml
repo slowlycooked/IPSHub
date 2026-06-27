@@ -1,20 +1,20 @@
-version: '3.8'
-
-# ── IPSHub – Production Docker Compose ─────────────────────────────────────
-# Copy .env.example → .env and fill in your values, then run:
-#   docker compose up -d --build
+# ── IPSHub – Optional Docker Compose deployment ────────────────────────────
+# Native macOS deployment is the primary path for this repo. For Docker/NAS,
+# run from the repository root:
+#   docker compose --env-file .env -f deploy/docker/docker-compose.yml up -d --build
 #
 # Service topology:
 #   frontend  (nginx:1.27-alpine)  → port WEB_PORT:80   (default 8088:80)
 #     └─ proxies /api/ /sub/ /health  to  backend:8080
-#   backend   (node:20-alpine)      → internal port 8080 only
+#   backend   (node:22-alpine)      → internal port 8080 only
 
 services:
 
   # ── Backend: Fastify / Node.js API server ──────────────────────────────────
   backend:
     build:
-      context: .
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
       target: backend
       args:
         BUILDKIT_INLINE_CACHE: "1"
@@ -42,8 +42,8 @@ services:
       # Absolute path inside the container – matches the volume mount below
       - DB_PATH=/app/data/ipshub.db
     volumes:
-      - ./data:/app/data       # SQLite database (persistent)
-      - ./config:/app/config   # optional config overrides
+      - ../../data:/app/data       # SQLite database (persistent)
+      - ../../config:/app/config   # optional config overrides
     # Backend port is NOT exposed externally – frontend nginx is the entry point.
     # Uncomment the line below only if you need direct backend access for debugging:
     # ports:
@@ -58,7 +58,8 @@ services:
   # ── Frontend: nginx serving React SPA + reverse-proxying to backend ────────
   frontend:
     build:
-      context: .
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
       target: frontend
       provenance: false
     container_name: ipshub-frontend
@@ -68,4 +69,3 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-

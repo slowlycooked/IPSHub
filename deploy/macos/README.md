@@ -1,9 +1,9 @@
-# Mac mini Production Deployment
+# macOS Native Production Deployment
 
-This guide runs IPSHub directly on a macOS host without Docker. The production
-helper pulls updates with git, builds the server and web app, initializes or
-migrates the SQLite database during startup, and keeps the service running in
-the background.
+This guide runs IPSHub directly on macOS without Docker. It is the primary
+deployment path for this repo. The production helper pulls updates with git,
+builds the server and web app, initializes or migrates the SQLite database
+during startup, and keeps the service running in the background.
 
 ## 1. Install prerequisites
 
@@ -12,6 +12,11 @@ brew install node pnpm git
 ```
 
 The project expects Node.js 20+ and pnpm 8+. Node.js 22 LTS is recommended.
+If native dependency rebuilds fail, install Xcode Command Line Tools:
+
+```bash
+xcode-select --install
+```
 
 ## 2. Configure `.env`
 
@@ -77,6 +82,27 @@ an update anyway:
 
 ```bash
 IPSHUB_ALLOW_DIRTY=1 scripts/prod.sh update
+```
+
+## Optional nginx reverse proxy
+
+The Docker nginx config under `deploy/docker/` proxies to the Docker service
+name `backend:8080`. Do not use it directly for host-mode macOS deployment.
+
+For a direct macOS install where `.env` uses `SERVER_PORT=8189`, use
+`deploy/macos/nginx.conf`:
+
+```bash
+sudo cp deploy/macos/nginx.conf /opt/homebrew/etc/nginx/servers/ipshub.conf
+sudo nginx -t
+sudo brew services restart nginx
+```
+
+If the frontend shows `Request failed with status 502`, verify nginx is proxying
+to the same port printed by:
+
+```bash
+scripts/prod.sh status
 ```
 
 ## 5. Daily commands
