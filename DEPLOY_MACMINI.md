@@ -88,10 +88,27 @@ scripts/prod.sh restart
 scripts/prod.sh stop
 ```
 
+## Native SQLite rebuild
+
+IPSHub uses `better-sqlite3`, which includes a native macOS binary. If Node.js
+or pnpm changes, rebuild it on the Mac mini before starting:
+
+```bash
+scripts/prod.sh rebuild
+```
+
+If the rebuild fails on macOS, install Xcode Command Line Tools:
+
+```bash
+xcode-select --install
+```
+
+Node.js 22 LTS is recommended for production. Very new Node.js versions may
+need a local native rebuild because prebuilt binaries are not always available.
+
 Runtime files are stored in:
 
 - `data/` for SQLite and related database files
 - `logs/ipshub.log` for process logs
 - `.ipshub.pid` for the background process ID
 - `public/` for generated frontend assets served by the backend
-

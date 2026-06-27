@@ -17,6 +17,7 @@ Usage: scripts/prod.sh <command>
 
 Commands:
   install   Install production dependencies with pnpm
+  rebuild   Rebuild native production dependencies
   build     Build server and web assets, then stage web assets for the server
   start     Start the production service in the background
   stop      Stop the background service
@@ -39,6 +40,36 @@ die() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "$1 is required but was not found in PATH"
+}
+
+check_native_build_tools() {
+  if [[ "$(uname -s)" == "Darwin" ]] && ! xcode-select -p >/dev/null 2>&1; then
+    die "Xcode Command Line Tools are required to build better-sqlite3; run: xcode-select --install"
+  fi
+}
+
+rebuild_native_deps() {
+  require_command pnpm
+  check_native_build_tools
+  cd "$ROOT"
+  pnpm --filter @ipshub/server rebuild better-sqlite3
+}
+
+verify_native_deps() {
+  cd "$ROOT"
+  if node -e "require('better-sqlite3')" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "better-sqlite3 native binding is missing; rebuilding it for this host..."
+  rebuild_native_deps
+
+  node -e "require('better-sqlite3')" >/dev/null 2>&1 || {
+    echo "Failed to load better-sqlite3 after rebuild." >&2
+    echo "Check Node.js version with: node --version" >&2
+    echo "Node.js 22 LTS is recommended for this project on macOS production hosts." >&2
+    return 1
+  }
 }
 
 load_env() {
@@ -85,6 +116,7 @@ install_deps() {
   require_command pnpm
   cd "$ROOT"
   pnpm install --frozen-lockfile
+  rebuild_native_deps
   pnpm prune --prod
 }
 
@@ -92,6 +124,7 @@ build_app() {
   require_command pnpm
   cd "$ROOT"
   pnpm install --frozen-lockfile
+  rebuild_native_deps
   pnpm build
 
   rm -rf "$PUBLIC_DIR"
@@ -109,6 +142,7 @@ start_service() {
 
   [ -f "$ROOT/apps/server/dist/index.js" ] || die "server build is missing; run scripts/prod.sh build first"
   [ -f "$PUBLIC_DIR/index.html" ] || die "web assets are missing; run scripts/prod.sh build first"
+  verify_native_deps
 
   mkdir -p "$LOG_DIR"
   cd "$ROOT"
@@ -186,6 +220,9 @@ command="${1:-}"
 case "$command" in
   install)
     install_deps
+    ;;
+  rebuild)
+    rebuild_native_deps
     ;;
   build)
     check_env
