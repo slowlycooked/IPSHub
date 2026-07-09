@@ -7,7 +7,8 @@ export type ClashProfileTarget =
   | 'clash-verge-rev'
   | 'mihomo'
   | 'clash-meta'
-  | 'sing-box';
+  | 'sing-box'
+  | 'loon';
 export type ProxyGroupType = 'select' | 'url-test' | 'fallback' | 'load-balance';
 
 export type ProxyGroupSource =

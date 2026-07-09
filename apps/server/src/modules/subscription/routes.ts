@@ -1,7 +1,10 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { validateToken, recordAccess, getProfileById } from '@/modules/profiles/service';
 import { getNodes } from '@/modules/nodes/service';
-import { renderClashProfile } from '@/core/renderers/renderClashProfile';
+import {
+  normalizeClashProfileTarget,
+  renderClashProfile,
+} from '@/core/renderers/renderClashProfile';
 import { renderProvider } from '@/core/renderers/renderProvider';
 import { renderLoon } from '@/core/renderers/renderLoon';
 import { renderRaw } from '@/core/renderers/renderRaw';
@@ -117,8 +120,18 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         return context;
       }
 
+      const target = normalizeClashProfileTarget(
+        request.query.target ?? context.profile.clash_config?.target
+      );
+      if (target === 'loon') {
+        const content = renderLoon(context.nodes, context.profile.clash_config);
+        reply.type('text/plain');
+        reply.header('Content-Disposition', `attachment; filename="${context.profile.name}.txt"`);
+        return content;
+      }
+
       const content = renderClashProfile(context.profile.clash_config, context.nodes, {
-        target: request.query.target,
+        target,
       });
       reply.type('application/yaml');
       reply.header('Content-Disposition', `attachment; filename="${context.profile.name}.yaml"`);
@@ -147,7 +160,7 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         return context;
       }
 
-      const content = renderLoon(context.nodes);
+      const content = renderLoon(context.nodes, context.profile.clash_config);
       reply.type('text/plain');
       reply.header('Content-Disposition', `attachment; filename="${context.profile.name}.txt"`);
       return content;

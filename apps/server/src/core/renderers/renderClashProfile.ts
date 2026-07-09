@@ -8,6 +8,7 @@ import {
 } from '@/types/clashConfig';
 import { stringify as stringifyYaml, parse as parseYaml } from 'yaml';
 import { nodeToMihomoProxy } from './mihomoProxy';
+import { renderLoon } from './renderLoon';
 import { createLogger } from '@/utils/logger';
 
 const logger = createLogger('render-clash-profile');
@@ -59,6 +60,8 @@ export function normalizeClashProfileTarget(target: string | null | undefined): 
     case 'sing-box':
     case 'singbox':
       return 'sing-box';
+    case 'loon':
+      return 'loon';
     default:
       return DEFAULT_CLASH_PROFILE_TARGET;
   }
@@ -334,6 +337,10 @@ export function renderClashProfile(
   options: { target?: ClashProfileTarget | string | null } = {}
 ): string {
   const target = normalizeClashProfileTarget(options.target ?? clashConfig?.target);
+  if (target === 'loon') {
+    return renderLoon(nodes, clashConfig);
+  }
+
   const supportedProtocols = supportedProtocolsForTarget(target);
   const supportedNodes = nodes.filter((n) => supportedProtocols.has(n.protocol));
 

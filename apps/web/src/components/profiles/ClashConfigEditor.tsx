@@ -27,6 +27,7 @@ const CLASH_PROFILE_TARGET_OPTIONS: Array<{ value: ClashProfileTarget; label: st
   { value: 'mihomo', label: 'Mihomo' },
   { value: 'clash-meta', label: 'Clash Meta' },
   { value: 'sing-box', label: 'sing-box' },
+  { value: 'loon', label: 'Loon' },
   { value: 'clash-legacy', label: 'Clash legacy core' },
 ];
 
@@ -888,6 +889,11 @@ export function ClashConfigEditor({ value, onChange, onValidationChange }: Clash
             {target === 'clash-verge-rev' && (
               <p className="mt-1 text-xs text-success">
                 Clash Verge Rev 使用 Mihomo 内核，支持 Hysteria2。
+              </p>
+            )}
+            {target === 'loon' && (
+              <p className="mt-1 text-xs text-success">
+                Loon 官方支持 Hysteria2，并会输出 Loon 节点格式。
               </p>
             )}
           </div>

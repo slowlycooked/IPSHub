@@ -312,6 +312,32 @@ describe('renderClashProfile', () => {
     }
   );
 
+  it('renders target=loon as Loon Hysteria2 format instead of Clash YAML', () => {
+    const cfg: ClashConfig = {
+      target: 'loon',
+      proxyGroups: [
+        { name: 'Manual', type: 'select', source: { type: 'manual', proxies: ['HY2 01'] } },
+      ],
+      rules: [{ type: 'MATCH', policy: 'Manual' }],
+    };
+    const nodes = [
+      makeNode({
+        name: 'HY2 01',
+        protocol: 'hysteria2',
+        server: 'hy2.example.com',
+        port: 8443,
+        password: 'secret',
+        host: 'sni.example.com',
+      }),
+    ];
+
+    const output = renderClashProfile(cfg, nodes);
+
+    expect(output).toContain('HY2 01 = Hysteria2,hy2.example.com,8443,"secret"');
+    expect(output).not.toContain('type: hysteria2');
+    expect(output).toContain('Manual = select,HY2 01');
+  });
+
   it('maps the Clash Verge Rev entry name to a Mihomo-compatible target', () => {
     const cfg: ClashConfig = {
       proxyGroups: [{ name: 'All', type: 'select', source: { type: 'all' }, includeDirect: true }],

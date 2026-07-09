@@ -1,4 +1,5 @@
 import { ProxyNode } from '@/types/proxy';
+import type { ClashConfig, ProxyGroupConfig, ProxyGroupSource } from '@/types/clashConfig';
 
 /**
  * Transports not supported by Loon's VLESS implementation.
@@ -9,11 +10,22 @@ const UNSUPPORTED_VLESS_TRANSPORTS = new Set(['grpc', 'xhttp', 'splithttp', 'qui
  * 将节点渲染为 Loon 格式
  * Loon 使用原生配置行格式，每行一个节点
  */
-export function renderLoon(nodes: ProxyNode[]): string {
-  return nodes
-    .map(nodeToLoonLine)
-    .filter(Boolean)
-    .join('\n');
+export function renderLoon(nodes: ProxyNode[], config?: ClashConfig | null): string {
+  const renderedNodes = nodes
+    .map((node) => ({ node, line: nodeToLoonLine(node) }))
+    .filter((item): item is { node: ProxyNode; line: string } => item.line !== null);
+
+  const proxyLines = renderedNodes.map((item) => item.line);
+  const renderableNodes = renderedNodes.map((item) => item.node);
+  const policyGroups = Array.isArray(config?.proxyGroups)
+    ? renderLoonPolicyGroups(config.proxyGroups, renderableNodes)
+    : [];
+
+  if (policyGroups.length === 0) {
+    return proxyLines.join('\n');
+  }
+
+  return ['[Proxy]', ...proxyLines, '', '[Proxy Group]', ...policyGroups].join('\n');
 }
 
 function nodeToLoonLine(node: ProxyNode): string | null {
@@ -45,7 +57,11 @@ function nodeToLoonLine(node: ProxyNode): string | null {
       const password = node.password || '';
       const sni = node.host || node.server;
       const skipVerify = node.allowInsecure ?? node.tlsInsecure ?? false;
-      const opts = ['over-tls=true', `sni=${sni}`, `skip-cert-verify=${skipVerify ? 'true' : 'false'}`];
+      const opts = [
+        'over-tls=true',
+        `sni=${sni}`,
+        `skip-cert-verify=${skipVerify ? 'true' : 'false'}`,
+      ];
       return `${node.name} = Trojan,${node.server},${node.port},"${password}",${opts.join(',')}`;
     }
 
@@ -54,18 +70,108 @@ function nodeToLoonLine(node: ProxyNode): string | null {
 
     case 'hysteria2': {
       const password = node.password || '';
-      const opts: string[] = [];
+      const opts: string[] = [
+        `skip-cert-verify=${node.tlsInsecure || node.allowInsecure ? 'true' : 'false'}`,
+      ];
       const sni = node.host || '';
       if (sni) opts.push(`sni=${sni}`);
-      const skipVerify = node.tlsInsecure || node.allowInsecure || false;
-      opts.push(`skip-cert-verify=${skipVerify ? 'true' : 'false'}`);
-      const mport = node.extraData?.['mport'];
-      if (mport) opts.push(`download-bandwidth=0`, `upload-bandwidth=0`);
-      return `${node.name} = Hysteria2,${node.server},${node.port},${password}${opts.length ? ',' + opts.join(',') : ''}`;
+      opts.push(`udp=${(node.udpRelay ?? true) ? 'true' : 'false'}`);
+      const fastOpen = readOptionalBoolean(
+        node.extraData?.['fast-open'] ?? node.extraData?.['tfo']
+      );
+      if (fastOpen !== undefined) {
+        opts.push(`fast-open=${fastOpen ? 'true' : 'false'}`);
+      }
+      const obfsPassword =
+        node.extraData?.['salamander-password'] ?? node.extraData?.['obfs-password'];
+      if (typeof obfsPassword === 'string' && obfsPassword.length > 0) {
+        opts.push(`salamander-password=${obfsPassword}`);
+      }
+      return `${node.name} = Hysteria2,${node.server},${node.port},${quoteLoonValue(password)},${opts.join(',')}`;
     }
 
     default:
       return null;
+  }
+}
+
+function quoteLoonValue(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function readOptionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+      return true;
+    }
+    if (['0', 'false', 'no', 'off'].includes(normalized)) {
+      return false;
+    }
+  }
+  return undefined;
+}
+
+function renderLoonPolicyGroups(groups: ProxyGroupConfig[], nodes: ProxyNode[]): string[] {
+  const proxyNames = nodes.map((node) => node.name);
+
+  return groups
+    .map((group) => {
+      const proxies = [...resolveLoonGroupProxies(group.source, proxyNames, nodes)];
+      if (group.includeGroups) {
+        proxies.push(...group.includeGroups);
+      }
+      if (group.includeDirect) {
+        proxies.push('DIRECT');
+      }
+      if (group.includeReject) {
+        proxies.push('REJECT');
+      }
+      return { group, proxies };
+    })
+    .filter(({ proxies }) => proxies.length > 0)
+    .map(({ group, proxies }) => `${group.name} = ${group.type},${proxies.join(',')}`);
+}
+
+function resolveLoonGroupProxies(
+  source: ProxyGroupSource,
+  proxyNames: string[],
+  nodes: ProxyNode[]
+): string[] {
+  switch (source.type) {
+    case 'all':
+      return [...proxyNames];
+    case 'manual':
+      return source.proxies.filter((proxy) => proxyNames.includes(proxy));
+    case 'region': {
+      const keywords = source.keywords.map((keyword) => keyword.toLowerCase());
+      return proxyNames.filter((name) =>
+        keywords.some((keyword) => name.toLowerCase().includes(keyword))
+      );
+    }
+    case 'tag': {
+      const tags = source.tags.map((tag) => tag.toLowerCase());
+      const nodesByName = new Map(nodes.map((node) => [node.name, node]));
+      return proxyNames.filter((name) => {
+        const node = nodesByName.get(name);
+        if (!node?.tag) return false;
+        return tags.some((tag) => node.tag!.toLowerCase().includes(tag));
+      });
+    }
+    case 'regex': {
+      try {
+        const re = new RegExp(source.pattern, 'i');
+        return proxyNames.filter((name) => re.test(name));
+      } catch {
+        return [];
+      }
+    }
   }
 }
 

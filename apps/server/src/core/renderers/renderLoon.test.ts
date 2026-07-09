@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseUriList } from '@/core/parsers/parseUriList';
+import type { ClashConfig } from '@/types/clashConfig';
+import type { ProxyNode } from '@/types/proxy';
 import { renderLoon } from './renderLoon';
 
 const UUID = '123e4567-e89b-12d3-a456-426614174000';
@@ -12,7 +14,7 @@ describe('renderLoon – VLESS', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `VLESS-TCP-TLS = VLESS,server.example.com,443,"${UUID}",transport=tcp,over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+      `VLESS-TCP-TLS = VLESS,server.example.com,443,"${UUID}",transport=tcp,over-tls=true,sni=server.example.com,skip-cert-verify=false`
     );
   });
 
@@ -23,7 +25,7 @@ describe('renderLoon – VLESS', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `VLESS-WS-TLS = VLESS,server.example.com,443,"${UUID}",transport=ws,path=/ws,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+      `VLESS-WS-TLS = VLESS,server.example.com,443,"${UUID}",transport=ws,path=/ws,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`
     );
   });
 
@@ -34,7 +36,7 @@ describe('renderLoon – VLESS', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `VLESS-HTTP-TLS = VLESS,server.example.com,443,"${UUID}",transport=http,path=/api,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+      `VLESS-HTTP-TLS = VLESS,server.example.com,443,"${UUID}",transport=http,path=/api,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`
     );
   });
 
@@ -45,7 +47,7 @@ describe('renderLoon – VLESS', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `VLESS-H2-TLS = VLESS,server.example.com,443,"${UUID}",transport=http,path=/h2,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+      `VLESS-H2-TLS = VLESS,server.example.com,443,"${UUID}",transport=http,path=/h2,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`
     );
   });
 
@@ -56,7 +58,7 @@ describe('renderLoon – VLESS', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `VLESS-REALITY = VLESS,server.example.com,443,"${UUID}",transport=tcp,flow=xtls-rprx-vision,public-key="mypublickey",short-id=myshortid,udp=true,over-tls=true,sni=microsoft.com,skip-cert-verify=true`,
+      `VLESS-REALITY = VLESS,server.example.com,443,"${UUID}",transport=tcp,flow=xtls-rprx-vision,public-key="mypublickey",short-id=myshortid,udp=true,over-tls=true,sni=microsoft.com,skip-cert-verify=true`
     );
   });
 
@@ -102,7 +104,7 @@ describe('renderLoon – VLESS', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `VLESS-INSECURE = VLESS,server.example.com,443,"${UUID}",transport=tcp,over-tls=true,sni=server.example.com,skip-cert-verify=true`,
+      `VLESS-INSECURE = VLESS,server.example.com,443,"${UUID}",transport=tcp,over-tls=true,sni=server.example.com,skip-cert-verify=true`
     );
   });
 });
@@ -115,7 +117,7 @@ describe('renderLoon – Trojan', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `Trojan-TLS = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+      `Trojan-TLS = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=false`
     );
   });
 
@@ -126,7 +128,7 @@ describe('renderLoon – Trojan', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `Trojan-Insecure = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=true`,
+      `Trojan-Insecure = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=true`
     );
   });
 
@@ -137,7 +139,7 @@ describe('renderLoon – Trojan', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `Trojan-NoSNI = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+      `Trojan-NoSNI = Trojan,server.example.com,443,"mypassword",over-tls=true,sni=server.example.com,skip-cert-verify=false`
     );
   });
 
@@ -160,7 +162,7 @@ describe('renderLoon – VMess', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `VMess-TCP = VMess,server.example.com,443,aes-128-gcm,"${UUID}",transport=tcp`,
+      `VMess-TCP = VMess,server.example.com,443,aes-128-gcm,"${UUID}",transport=tcp`
     );
   });
 
@@ -171,7 +173,89 @@ describe('renderLoon – VMess', () => {
 
     const line = renderLoon(nodes);
     expect(line).toBe(
-      `VMess-WS-TLS = VMess,server.example.com,443,aes-128-gcm,"${UUID}",transport=ws,path=/ws,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`,
+      `VMess-WS-TLS = VMess,server.example.com,443,aes-128-gcm,"${UUID}",transport=ws,path=/ws,host=server.example.com,over-tls=true,sni=server.example.com,skip-cert-verify=false`
     );
+  });
+});
+
+describe('renderLoon – Hysteria2', () => {
+  it('renders Hysteria2 in Loon native format with udp enabled', () => {
+    const node: ProxyNode = {
+      fingerprint: 'hy2-1',
+      name: 'HY2 01',
+      protocol: 'hysteria2',
+      server: 'hy2.example.com',
+      port: 8443,
+      password: 'secret',
+      host: 'sni.example.com',
+      tlsInsecure: true,
+    };
+
+    expect(renderLoon([node])).toBe(
+      'HY2 01 = Hysteria2,hy2.example.com,8443,"secret",skip-cert-verify=true,sni=sni.example.com,udp=true'
+    );
+  });
+
+  it('maps obfs-password to salamander-password', () => {
+    const uri =
+      'hysteria2://secret@hy2.example.com:8443/?sni=sni.example.com&obfs=salamander&obfs-password=obfsSecret#HY2%2001';
+    const { nodes } = parseUriList(uri);
+
+    expect(renderLoon(nodes)).toContain('salamander-password=obfsSecret');
+  });
+
+  it('parses base64 hy2 URI lists without filtering Hysteria2 nodes', () => {
+    const uri = 'hy2://secret@hy2.example.com:8443/?sni=sni.example.com#HY2%2001';
+    const { nodes } = parseUriList(Buffer.from(uri).toString('base64'));
+
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].protocol).toBe('hysteria2');
+    expect(renderLoon(nodes)).toContain('HY2 01 = Hysteria2');
+  });
+
+  it('maps tfo and fast-open to fast-open', () => {
+    const node: ProxyNode = {
+      fingerprint: 'hy2-1',
+      name: 'HY2 01',
+      protocol: 'hysteria2',
+      server: 'hy2.example.com',
+      port: 8443,
+      password: 'secret',
+      extraData: {
+        tfo: true,
+      },
+    };
+
+    expect(renderLoon([node])).toContain('fast-open=true');
+  });
+
+  it('keeps Hysteria2 node references in Loon policy groups', () => {
+    const nodes: ProxyNode[] = [
+      {
+        fingerprint: 'hy2-1',
+        name: 'HY2 01',
+        protocol: 'hysteria2',
+        server: 'hy2.example.com',
+        port: 8443,
+        password: 'secret',
+      },
+    ];
+    const config: ClashConfig = {
+      target: 'loon',
+      proxyGroups: [
+        {
+          name: 'Manual',
+          type: 'select',
+          source: { type: 'manual', proxies: ['HY2 01'] },
+          includeDirect: true,
+        },
+      ],
+      rules: [{ type: 'MATCH', policy: 'Manual' }],
+    };
+
+    const output = renderLoon(nodes, config);
+
+    expect(output).toContain('[Proxy Group]');
+    expect(output).toContain('Manual = select,HY2 01,DIRECT');
   });
 });

@@ -33,23 +33,27 @@ function teardownDb(): void {
 function seedUser(userId = 'user-1'): string {
   const db = getDatabase();
   const now = Date.now();
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO users (id, username, password_hash, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?)
-  `).run(userId, `user-${userId}`, hashPassword('pass123'), now, now);
+  `
+  ).run(userId, `user-${userId}`, hashPassword('pass123'), now, now);
   return userId;
 }
 
 function seedProvider(providerId: string, userId: string, name: string): void {
   const db = getDatabase();
   const now = Date.now();
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO providers (
       id, user_id, name, url, url_encrypted, type, enabled, refresh_interval,
       timeout_seconds, user_agent, request_headers_json, provider_prefix,
       last_node_count, failed_count, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `
+  ).run(
     providerId,
     userId,
     name,
@@ -79,12 +83,16 @@ describe('subscription pipeline fixes', () => {
   });
 
   it('keeps VLESS nodes through parse -> clash/provider render', () => {
-    const parsed = parseUriList('vless://123e4567-e89b-12d3-a456-426614174000@example.com:443?security=tls&type=ws&host=cdn.example.com&path=%2Fws#VLESS-US');
+    const parsed = parseUriList(
+      'vless://123e4567-e89b-12d3-a456-426614174000@example.com:443?security=tls&type=ws&host=cdn.example.com&path=%2Fws#VLESS-US'
+    );
     expect(parsed.nodes).toHaveLength(1);
     expect(parsed.nodes[0].protocol).toBe('vless');
 
     const clashDoc = parseYaml(renderClash(parsed.nodes)) as { proxies?: Array<{ type?: string }> };
-    const providerDoc = parseYaml(renderProvider(parsed.nodes)) as { proxies?: Array<{ type?: string }> };
+    const providerDoc = parseYaml(renderProvider(parsed.nodes)) as {
+      proxies?: Array<{ type?: string }>;
+    };
 
     expect(clashDoc.proxies?.some((proxy) => proxy.type === 'vless')).toBe(true);
     expect(providerDoc.proxies?.some((proxy) => proxy.type === 'vless')).toBe(true);
@@ -168,6 +176,60 @@ describe('subscription pipeline fixes', () => {
 
     expect(response.statusCode).toBe(422);
     expect(response.json()).toEqual({ error: 'No supported nodes available for this profile' });
+
+    await app.close();
+  });
+
+  it('renders Loon format from clash endpoint when target=loon', async () => {
+    const userId = seedUser();
+    seedProvider('provider-a', userId, 'A');
+    const created = createProfile(
+      {
+        name: 'Loon Target',
+        output_format: 'clash',
+        clash_config: {
+          target: 'loon',
+          proxyGroups: [
+            {
+              name: 'Manual',
+              type: 'select',
+              source: { type: 'manual', proxies: ['HY2 01'] },
+              includeDirect: true,
+            },
+          ],
+          rules: [{ type: 'MATCH', policy: 'Manual' }],
+        },
+      },
+      userId
+    );
+    upsertNodes(
+      [
+        {
+          fingerprint: 'hy2-1',
+          protocol: 'hysteria2',
+          name: 'HY2 01',
+          server: 'hy2.example.com',
+          port: 8443,
+          password: 'secret',
+          enabled: true,
+        },
+      ],
+      'provider-a'
+    );
+
+    const app = Fastify();
+    await registerSubscriptionRoutes(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/sub/clash/${encodeURIComponent(created.name)}?token=${created.token}&target=loon`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('text/plain');
+    expect(response.body).toContain('HY2 01 = Hysteria2,hy2.example.com,8443,"secret"');
+    expect(response.body).not.toContain('type: hysteria2');
+    expect(response.body).toContain('Manual = select,HY2 01,DIRECT');
 
     await app.close();
   });

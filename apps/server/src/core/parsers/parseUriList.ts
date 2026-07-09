@@ -14,8 +14,15 @@ function isBase64(str: string): boolean {
   try {
     const decoded = Buffer.from(str.trim(), 'base64').toString('utf-8');
     // 有效的 base64 应该能解码且包含有效的 URI
-    return /^[a-zA-Z0-9+/=\s]*$/.test(str.trim()) && 
-           (decoded.includes('ss://') || decoded.includes('vmess://') || decoded.includes('trojan://') || decoded.includes('vless://'));
+    return (
+      /^[a-zA-Z0-9+/=\s]*$/.test(str.trim()) &&
+      (decoded.includes('ss://') ||
+        decoded.includes('vmess://') ||
+        decoded.includes('trojan://') ||
+        decoded.includes('vless://') ||
+        decoded.includes('hysteria2://') ||
+        decoded.includes('hy2://'))
+    );
   } catch {
     return false;
   }
@@ -47,8 +54,8 @@ export function parseUriList(content: string, providerId?: string): ParseResult 
   // 按行分割并解析每个 URI
   const lines = uriListContent
     .split(/[\r\n]+/)
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#'));
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
 
   for (const uri of lines) {
     try {
@@ -74,7 +81,7 @@ export function parseUriList(content: string, providerId?: string): ParseResult 
  */
 function parseUri(uri: string, providerId?: string): ProxyNode | null {
   const trimmedUri = uri.trim();
-  
+
   if (!trimmedUri) {
     return null;
   }
@@ -120,9 +127,12 @@ function parseVlessUri(uri: string, providerId?: string): ProxyNode {
   const grpcServiceName =
     url.searchParams.get('serviceName') || url.searchParams.get('grpc-service-name') || '';
   const flow = url.searchParams.get('flow') || undefined;
-  const realityPublicKey = url.searchParams.get('pbk') || url.searchParams.get('public-key') || undefined;
-  const realityShortId = url.searchParams.get('sid') || url.searchParams.get('short-id') || undefined;
-  const realityFingerprint = url.searchParams.get('fp') || url.searchParams.get('fingerprint') || undefined;
+  const realityPublicKey =
+    url.searchParams.get('pbk') || url.searchParams.get('public-key') || undefined;
+  const realityShortId =
+    url.searchParams.get('sid') || url.searchParams.get('short-id') || undefined;
+  const realityFingerprint =
+    url.searchParams.get('fp') || url.searchParams.get('fingerprint') || undefined;
 
   const name = decodeURIComponent(url.hash.slice(1) || 'VLESS');
 
@@ -165,7 +175,22 @@ function parseHysteria2Uri(uri: string, providerId?: string): ProxyNode {
   const sni = url.searchParams.get('sni') || '';
   const insecure = url.searchParams.get('insecure') === '1';
   const mport = url.searchParams.get('mport') || undefined;
+  const obfsPassword =
+    url.searchParams.get('obfs-password') ||
+    url.searchParams.get('salamander-password') ||
+    undefined;
+  const fastOpen = url.searchParams.get('tfo') || url.searchParams.get('fast-open');
   const name = decodeURIComponent(url.hash.slice(1) || 'Hysteria2');
+  const extraData: Record<string, unknown> = {};
+  if (mport) {
+    extraData.mport = mport;
+  }
+  if (obfsPassword) {
+    extraData['obfs-password'] = obfsPassword;
+  }
+  if (fastOpen !== null) {
+    extraData.tfo = fastOpen === '1' || fastOpen.toLowerCase() === 'true';
+  }
 
   const node: ProxyNode = {
     name,
@@ -177,7 +202,7 @@ function parseHysteria2Uri(uri: string, providerId?: string): ProxyNode {
     tlsInsecure: insecure,
     host: sni || undefined,
     fingerprint: '',
-    ...(mport && { extraData: { mport } }),
+    ...(Object.keys(extraData).length > 0 && { extraData }),
     ...(providerId && { providerId }),
   };
 
