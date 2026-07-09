@@ -296,7 +296,15 @@ async function processNodePair(
   rawLatencyMs = rawProbe.latencyMs;
   log('singbox-raw', rawProbe.status === 'ok' ? 'INFO' : rawProbe.status === 'skipped' ? 'DEBUG' : 'WARN',
     `Sing-box raw probe: ${rawProbe.status}`,
-    { latencyMs: rawProbe.latencyMs, ...(rawProbe.errorCode ? { errorCode: rawProbe.errorCode } : {}), ...(rawProbe.error ? { error: rawProbe.error } : {}) },
+    {
+      latencyMs: rawProbe.latencyMs,
+      ...(rawProbe.resolvedPath ? { resolvedPath: rawProbe.resolvedPath } : {}),
+      ...(rawProbe.version ? { version: rawProbe.version } : {}),
+      ...(rawProbe.source ? { source: rawProbe.source } : {}),
+      ...(rawProbe.errorCode ? { errorCode: rawProbe.errorCode } : {}),
+      ...(rawProbe.error ? { error: rawProbe.error } : {}),
+      ...(rawProbe.attemptedPaths ? { attemptedPaths: rawProbe.attemptedPaths } : {}),
+    },
   );
 
   if (pair.ipshub) {
@@ -307,7 +315,15 @@ async function processNodePair(
     ipshubLatencyMs = ipshubProbe.latencyMs;
     log('singbox-ipshub', ipshubProbe.status === 'ok' ? 'INFO' : ipshubProbe.status === 'skipped' ? 'DEBUG' : 'WARN',
       `Sing-box IPSHub probe: ${ipshubProbe.status}`,
-      { latencyMs: ipshubProbe.latencyMs, ...(ipshubProbe.errorCode ? { errorCode: ipshubProbe.errorCode } : {}), ...(ipshubProbe.error ? { error: ipshubProbe.error } : {}) },
+      {
+        latencyMs: ipshubProbe.latencyMs,
+        ...(ipshubProbe.resolvedPath ? { resolvedPath: ipshubProbe.resolvedPath } : {}),
+        ...(ipshubProbe.version ? { version: ipshubProbe.version } : {}),
+        ...(ipshubProbe.source ? { source: ipshubProbe.source } : {}),
+        ...(ipshubProbe.errorCode ? { errorCode: ipshubProbe.errorCode } : {}),
+        ...(ipshubProbe.error ? { error: ipshubProbe.error } : {}),
+        ...(ipshubProbe.attemptedPaths ? { attemptedPaths: ipshubProbe.attemptedPaths } : {}),
+      },
     );
   }
 

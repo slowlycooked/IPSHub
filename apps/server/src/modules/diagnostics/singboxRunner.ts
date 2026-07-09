@@ -1,7 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createServer, Socket } from 'node:net';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import type { ProxyNode } from '@/types/proxy';
 import { createLogger } from '@/utils/logger';
 
@@ -11,38 +11,135 @@ const logger = createLogger('singbox-runner');
 // Binary detection
 // ---------------------------------------------------------------------------
 
-let _singBoxPath: string | null | undefined = undefined; // undefined = not yet resolved
+const DEFAULT_FALLBACK_PATHS = [
+  '/opt/homebrew/bin/sing-box',
+  '/usr/local/bin/sing-box',
+  '/usr/bin/sing-box',
+] as const;
+
+export type SingBoxBinarySource = 'env' | 'path' | 'fallback';
+
+export interface SingBoxBinaryResolution {
+  found: true;
+  resolvedPath: string;
+  version: string;
+  source: SingBoxBinarySource;
+  attemptedPaths: string[];
+}
+
+export interface SingBoxBinaryNotFound {
+  found: false;
+  errorCode: 'SING_BOX_NOT_FOUND';
+  attemptedPaths: string[];
+  pathEnv: string;
+  explanation: string;
+}
+
+export type SingBoxBinaryLookupResult = SingBoxBinaryResolution | SingBoxBinaryNotFound;
+
+interface Candidate {
+  path: string;
+  source: SingBoxBinarySource;
+}
+
+interface ResolveOptions {
+  env?: NodeJS.ProcessEnv;
+  fallbackPaths?: readonly string[];
+}
+
+let _singBoxResolution: SingBoxBinaryLookupResult | undefined = undefined;
+
+function pathCandidates(pathEnv: string): Candidate[] {
+  return pathEnv
+    .split(delimiter)
+    .filter(Boolean)
+    .map((dir) => ({ path: join(dir, 'sing-box'), source: 'path' }));
+}
+
+function buildSingBoxCandidates(env: NodeJS.ProcessEnv, fallbackPaths: readonly string[]): Candidate[] {
+  const candidates: Candidate[] = [];
+  const envPath = env['SING_BOX_PATH']?.trim();
+  if (envPath) candidates.push({ path: envPath, source: 'env' });
+  candidates.push(...pathCandidates(env['PATH'] ?? ''));
+  candidates.push(...fallbackPaths.map((path) => ({ path, source: 'fallback' as const })));
+  return candidates;
+}
+
+function validateSingBoxCandidate(candidate: string): { ok: true; version: string } | { ok: false } {
+  if (!existsSync(candidate)) return { ok: false };
+  try {
+    accessSync(candidate, constants.X_OK);
+    const output = execFileSync(candidate, ['version'], {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const version = output.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? 'unknown';
+    return { ok: true, version };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export function resolveSingBoxBinary(options: ResolveOptions = {}): SingBoxBinaryLookupResult {
+  const env = options.env ?? process.env;
+  const fallbackPaths = options.fallbackPaths ?? DEFAULT_FALLBACK_PATHS;
+  const pathEnv = env['PATH'] ?? '';
+  const attemptedPaths: string[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of buildSingBoxCandidates(env, fallbackPaths)) {
+    if (seen.has(candidate.path)) continue;
+    seen.add(candidate.path);
+    attemptedPaths.push(candidate.path);
+
+    const validation = validateSingBoxCandidate(candidate.path);
+    if (validation.ok) {
+      const resolution = {
+        found: true,
+        resolvedPath: candidate.path,
+        version: validation.version,
+        source: candidate.source,
+        attemptedPaths,
+      } satisfies SingBoxBinaryResolution;
+      logger.info(
+        {
+          resolvedPath: resolution.resolvedPath,
+          version: resolution.version,
+          source: resolution.source,
+        },
+        'Resolved sing-box binary',
+      );
+      return resolution;
+    }
+  }
+
+  return {
+    found: false,
+    errorCode: 'SING_BOX_NOT_FOUND',
+    attemptedPaths,
+    pathEnv,
+    explanation:
+      `sing-box was not found or did not pass validation. Current PATH: ${pathEnv || '(empty)'}. ` +
+      `Attempted paths: ${attemptedPaths.length > 0 ? attemptedPaths.join(', ') : '(none)'}. ` +
+      'Set SING_BOX_PATH to the absolute path of a working sing-box binary.',
+  };
+}
+
+export function resetSingBoxBinaryCacheForTests(): void {
+  _singBoxResolution = undefined;
+}
+
+function getCachedSingBoxResolution(): SingBoxBinaryLookupResult {
+  if (_singBoxResolution === undefined) {
+    _singBoxResolution = resolveSingBoxBinary();
+  }
+  return _singBoxResolution;
+}
 
 export function findSingBoxBinary(): string | null {
-  if (_singBoxPath !== undefined) return _singBoxPath;
-
-  const envPath = process.env['SING_BOX_PATH'];
-  if (envPath && existsSync(envPath)) {
-    _singBoxPath = envPath;
-    return _singBoxPath;
-  }
-
-  const candidates = ['/usr/local/bin/sing-box', '/usr/bin/sing-box', '/opt/homebrew/bin/sing-box'];
-  for (const c of candidates) {
-    if (existsSync(c)) {
-      _singBoxPath = c;
-      return _singBoxPath;
-    }
-  }
-
-  try {
-    const result = execFileSync('which', ['sing-box'], { encoding: 'utf-8', timeout: 2000 });
-    const path = result.trim();
-    if (path && existsSync(path)) {
-      _singBoxPath = path;
-      return _singBoxPath;
-    }
-  } catch {
-    // not found in PATH
-  }
-
-  _singBoxPath = null;
-  return null;
+  const resolution = getCachedSingBoxResolution();
+  return resolution.found ? resolution.resolvedPath : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +426,10 @@ export interface SingBoxProbeResult {
   httpCode?: number;
   errorCode?: string;
   error?: string;
+  resolvedPath?: string;
+  version?: string;
+  source?: SingBoxBinarySource;
+  attemptedPaths?: string[];
 }
 
 export async function probeThroughSingBox(
@@ -339,21 +440,42 @@ export async function probeThroughSingBox(
   testUrls: string[],
   timeoutMs: number,
 ): Promise<SingBoxProbeResult> {
-  const binary = findSingBoxBinary();
-  if (!binary) {
-    return { status: 'skipped', latencyMs: null, errorCode: 'SING_BOX_NOT_FOUND' };
+  const binaryResolution = getCachedSingBoxResolution();
+  if (!binaryResolution.found) {
+    return {
+      status: 'skipped',
+      latencyMs: null,
+      errorCode: binaryResolution.errorCode,
+      error: binaryResolution.explanation,
+      attemptedPaths: binaryResolution.attemptedPaths,
+    };
   }
 
   const outbound = buildOutbound(node);
   if (!outbound) {
-    return { status: 'unsupported_protocol', latencyMs: null, errorCode: 'UNSUPPORTED_PROTOCOL' };
+    return {
+      status: 'unsupported_protocol',
+      latencyMs: null,
+      errorCode: 'UNSUPPORTED_PROTOCOL',
+      resolvedPath: binaryResolution.resolvedPath,
+      version: binaryResolution.version,
+      source: binaryResolution.source,
+    };
   }
 
   let socksPort: number;
   try {
     socksPort = await allocateSocksPort();
   } catch (err) {
-    return { status: 'failed', latencyMs: null, error: 'No free port available', errorCode: 'NO_FREE_PORT' };
+    return {
+      status: 'failed',
+      latencyMs: null,
+      error: 'No free port available',
+      errorCode: 'NO_FREE_PORT',
+      resolvedPath: binaryResolution.resolvedPath,
+      version: binaryResolution.version,
+      source: binaryResolution.source,
+    };
   }
 
   const configDir = `/tmp/ipshub/diagnostics/${runId}`;
@@ -365,13 +487,21 @@ export async function probeThroughSingBox(
     const cfg = buildSingBoxConfig(node, socksPort);
     writeFileSync(configPath, JSON.stringify(cfg, null, 2));
 
-    sbProcess = spawn(binary, ['run', '-c', configPath], {
+    sbProcess = spawn(binaryResolution.resolvedPath, ['run', '-c', configPath], {
       stdio: 'pipe',
     });
 
     const ready = await waitForPort(socksPort, Math.min(timeoutMs, 5000));
     if (!ready) {
-      return { status: 'failed', latencyMs: null, error: 'sing-box SOCKS5 port did not become ready', errorCode: 'SOCKS5_NOT_READY' };
+      return {
+        status: 'failed',
+        latencyMs: null,
+        error: 'sing-box SOCKS5 port did not become ready',
+        errorCode: 'SOCKS5_NOT_READY',
+        resolvedPath: binaryResolution.resolvedPath,
+        version: binaryResolution.version,
+        source: binaryResolution.source,
+      };
     }
 
     const urlToProbe = testUrls.find((u) => u.startsWith('http')) ?? 'http://www.gstatic.com/generate_204';
@@ -380,13 +510,23 @@ export async function probeThroughSingBox(
     const latencyMs = Date.now() - start;
 
     if (curlResult.ok) {
-      return { status: 'ok', latencyMs, httpCode: curlResult.httpCode };
+      return {
+        status: 'ok',
+        latencyMs,
+        httpCode: curlResult.httpCode,
+        resolvedPath: binaryResolution.resolvedPath,
+        version: binaryResolution.version,
+        source: binaryResolution.source,
+      };
     }
     return {
       status: 'failed',
       latencyMs: curlResult.latencyMs,
       httpCode: curlResult.httpCode,
       error: curlResult.error,
+      resolvedPath: binaryResolution.resolvedPath,
+      version: binaryResolution.version,
+      source: binaryResolution.source,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -396,6 +536,9 @@ export async function probeThroughSingBox(
       latencyMs: null,
       errorCode: 'PROBE_EXCEPTION',
       error: msg,
+      resolvedPath: binaryResolution.resolvedPath,
+      version: binaryResolution.version,
+      source: binaryResolution.source,
     };
   } finally {
     if (sbProcess) {
