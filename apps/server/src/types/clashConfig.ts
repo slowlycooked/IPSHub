@@ -6,6 +6,13 @@ export type ClashMode = 'rule' | 'global' | 'direct';
 
 export type ClashLogLevel = 'silent' | 'error' | 'warning' | 'info' | 'debug';
 
+export type ClashProfileTarget =
+  | 'clash-legacy'
+  | 'clash-verge-rev'
+  | 'mihomo'
+  | 'clash-meta'
+  | 'sing-box';
+
 export type ProxyGroupType = 'select' | 'url-test' | 'fallback' | 'load-balance';
 
 export type ProxyGroupSource =
@@ -42,6 +49,7 @@ export interface ClashGeneralConfig {
 }
 
 export interface ClashConfig {
+  target?: ClashProfileTarget;
   general?: ClashGeneralConfig;
   proxyGroups: ProxyGroupConfig[];
   ruleProviders?: Record<string, unknown>;

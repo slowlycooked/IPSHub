@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import type { ProxyNode } from '@/types/proxy';
-import type { ClashConfig } from '@/types/clashConfig';
+import type { ClashConfig, ClashProfileTarget } from '@/types/clashConfig';
 import {
   buildDefaultClashConfig,
   resolveGroupProxies,
@@ -73,8 +73,11 @@ describe('buildDefaultClashConfig', () => {
     const cfg = buildDefaultClashConfig();
     const groupNames = new Set(cfg.proxyGroups.map((g) => g.name));
     for (const rule of cfg.rules) {
-      const valid = rule.policy === 'DIRECT' || rule.policy === 'REJECT' || groupNames.has(rule.policy);
-      expect(valid, `Rule policy "${rule.policy}" should be DIRECT, REJECT, or a group name`).toBe(true);
+      const valid =
+        rule.policy === 'DIRECT' || rule.policy === 'REJECT' || groupNames.has(rule.policy);
+      expect(valid, `Rule policy "${rule.policy}" should be DIRECT, REJECT, or a group name`).toBe(
+        true
+      );
     }
   });
 });
@@ -147,11 +150,7 @@ describe('resolveGroupProxies', () => {
       makeNode({ name: 'Node C' }),
     ];
     const names = taggedNodes.map((n) => n.name);
-    const result = resolveGroupProxies(
-      { type: 'tag', tags: ['premium'] },
-      names,
-      taggedNodes
-    );
+    const result = resolveGroupProxies({ type: 'tag', tags: ['premium'] }, names, taggedNodes);
     expect(result).toEqual(['Node A']);
   });
 });
@@ -187,12 +186,8 @@ describe('validateClashConfig', () => {
 
   it('detects invalid rule policy', () => {
     const cfg: ClashConfig = {
-      proxyGroups: [
-        { name: 'Proxy', type: 'select', source: { type: 'all' } },
-      ],
-      rules: [
-        { type: 'MATCH', policy: 'NonExistentGroup' },
-      ],
+      proxyGroups: [{ name: 'Proxy', type: 'select', source: { type: 'all' } }],
+      rules: [{ type: 'MATCH', policy: 'NonExistentGroup' }],
     };
     const { valid, errors } = validateClashConfig(cfg, proxyNames, baseNodes);
     expect(valid).toBe(false);
@@ -201,9 +196,7 @@ describe('validateClashConfig', () => {
 
   it('detects MATCH not last', () => {
     const cfg: ClashConfig = {
-      proxyGroups: [
-        { name: 'P', type: 'select', source: { type: 'all' } },
-      ],
+      proxyGroups: [{ name: 'P', type: 'select', source: { type: 'all' } }],
       rules: [
         { type: 'MATCH', policy: 'P' },
         { type: 'DOMAIN-SUFFIX', value: 'example.com', policy: 'DIRECT' },
@@ -278,6 +271,87 @@ describe('renderClashProfile', () => {
     expect(parsed.proxies.length).toBe(baseNodes.length);
   });
 
+  it('filters hysteria2 nodes for target=clash-legacy', () => {
+    const cfg: ClashConfig = {
+      target: 'clash-legacy',
+      proxyGroups: [{ name: 'All', type: 'select', source: { type: 'all' }, includeDirect: true }],
+      rules: [{ type: 'MATCH', policy: 'All' }],
+    };
+    const nodes = [
+      makeNode({ name: 'SS 01', protocol: 'ss' }),
+      makeNode({ name: 'HY2 01', protocol: 'hysteria2' }),
+    ];
+
+    const yaml = renderClashProfile(cfg, nodes);
+    const parsed = parseYaml(yaml) as any;
+
+    expect(parsed.proxies.map((proxy: any) => proxy.name)).toEqual(['SS 01']);
+    expect(parsed.proxies.some((proxy: any) => proxy.type === 'hysteria2')).toBe(false);
+  });
+
+  it.each<ClashProfileTarget>(['clash-verge-rev', 'mihomo', 'clash-meta', 'sing-box'])(
+    'keeps hysteria2 nodes for target=%s',
+    (target) => {
+      const cfg: ClashConfig = {
+        target,
+        proxyGroups: [
+          { name: 'All', type: 'select', source: { type: 'all' }, includeDirect: true },
+        ],
+        rules: [{ type: 'MATCH', policy: 'All' }],
+      };
+      const nodes = [
+        makeNode({ name: 'SS 01', protocol: 'ss' }),
+        makeNode({ name: 'HY2 01', protocol: 'hysteria2' }),
+      ];
+
+      const yaml = renderClashProfile(cfg, nodes);
+      const parsed = parseYaml(yaml) as any;
+
+      expect(parsed.proxies.map((proxy: any) => proxy.name)).toContain('HY2 01');
+      expect(parsed.proxies.some((proxy: any) => proxy.type === 'hysteria2')).toBe(true);
+    }
+  );
+
+  it('maps the Clash Verge Rev entry name to a Mihomo-compatible target', () => {
+    const cfg: ClashConfig = {
+      proxyGroups: [{ name: 'All', type: 'select', source: { type: 'all' }, includeDirect: true }],
+      rules: [{ type: 'MATCH', policy: 'All' }],
+    };
+    const nodes = [
+      makeNode({ name: 'SS 01', protocol: 'ss' }),
+      makeNode({ name: 'HY2 01', protocol: 'hysteria2' }),
+    ];
+
+    const yaml = renderClashProfile(cfg, nodes, { target: 'Clash Verge Rev' });
+    const parsed = parseYaml(yaml) as any;
+
+    expect(parsed.proxies.map((proxy: any) => proxy.name)).toContain('HY2 01');
+  });
+
+  it('syncs proxy-groups after target filtering removes hysteria2 nodes', () => {
+    const cfg: ClashConfig = {
+      target: 'clash-legacy',
+      proxyGroups: [
+        {
+          name: 'Manual',
+          type: 'select',
+          source: { type: 'manual', proxies: ['SS 01', 'HY2 01'] },
+          includeDirect: true,
+        },
+      ],
+      rules: [{ type: 'MATCH', policy: 'Manual' }],
+    };
+    const nodes = [
+      makeNode({ name: 'SS 01', protocol: 'ss' }),
+      makeNode({ name: 'HY2 01', protocol: 'hysteria2' }),
+    ];
+
+    const yaml = renderClashProfile(cfg, nodes);
+    const parsed = parseYaml(yaml) as any;
+
+    expect(parsed['proxy-groups'][0].proxies).toEqual(['SS 01', 'DIRECT']);
+  });
+
   it('respects custom clashConfig', () => {
     const cfg: ClashConfig = {
       general: { mode: 'global', logLevel: 'debug' },
@@ -301,9 +375,7 @@ describe('renderClashProfile', () => {
 
   it('includes rule-providers only when configured', () => {
     const cfgWithProviders: ClashConfig = {
-      proxyGroups: [
-        { name: 'P', type: 'select', source: { type: 'all' }, includeDirect: true },
-      ],
+      proxyGroups: [{ name: 'P', type: 'select', source: { type: 'all' }, includeDirect: true }],
       ruleProviders: {
         'reject-list': {
           type: 'http',
@@ -355,9 +427,7 @@ describe('renderClashProfile', () => {
 
   it('falls back to default config when custom config is invalid', () => {
     const badCfg: ClashConfig = {
-      proxyGroups: [
-        { name: 'P', type: 'select', source: { type: 'all' } },
-      ],
+      proxyGroups: [{ name: 'P', type: 'select', source: { type: 'all' } }],
       rules: [{ type: 'MATCH', policy: 'NonExistentPolicy' }],
     };
     // Should not throw; falls back to default

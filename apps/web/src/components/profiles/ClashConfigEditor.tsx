@@ -5,6 +5,7 @@ import type {
   ClashGeneralConfig,
   ClashMode,
   ClashLogLevel,
+  ClashProfileTarget,
   ProxyGroupConfig,
   ProxyGroupType,
   ProxyGroupSource,
@@ -17,8 +18,17 @@ import { Button } from '@/components/ui/Button';
 // ---------------------------------------------------------------------------
 
 const DEFAULT_PROXY_POLICY = '🚀 节点选择';
+const DEFAULT_CLASH_PROFILE_TARGET: ClashProfileTarget = 'clash-verge-rev';
 const LOYALSOLDIER_RULESET_BASE_URL =
   'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release';
+
+const CLASH_PROFILE_TARGET_OPTIONS: Array<{ value: ClashProfileTarget; label: string }> = [
+  { value: 'clash-verge-rev', label: 'Clash Verge Rev' },
+  { value: 'mihomo', label: 'Mihomo' },
+  { value: 'clash-meta', label: 'Clash Meta' },
+  { value: 'sing-box', label: 'sing-box' },
+  { value: 'clash-legacy', label: 'Clash legacy core' },
+];
 
 function buildLoyalsoldierRuleProvider(
   name: string,
@@ -35,6 +45,7 @@ function buildLoyalsoldierRuleProvider(
 
 export function buildDefaultClashConfig(): ClashConfig {
   return {
+    target: DEFAULT_CLASH_PROFILE_TARGET,
     general: {
       mode: 'rule',
       logLevel: 'info',
@@ -124,11 +135,16 @@ export function buildDefaultClashConfig(): ClashConfig {
 
 function sourceLabel(source: ProxyGroupSource): string {
   switch (source.type) {
-    case 'all': return 'All nodes';
-    case 'manual': return `Manual (${source.proxies.length})`;
-    case 'region': return `Region: ${source.keywords.join(', ')}`;
-    case 'tag': return `Tag: ${source.tags.join(', ')}`;
-    case 'regex': return `Regex: ${source.pattern}`;
+    case 'all':
+      return 'All nodes';
+    case 'manual':
+      return `Manual (${source.proxies.length})`;
+    case 'region':
+      return `Region: ${source.keywords.join(', ')}`;
+    case 'tag':
+      return `Tag: ${source.tags.join(', ')}`;
+    case 'regex':
+      return `Regex: ${source.pattern}`;
   }
 }
 
@@ -192,6 +208,16 @@ export function validateClashConfigStructure(raw: unknown): ClashConfigValidatio
   }
   const obj = raw as Record<string, unknown>;
 
+  if (obj.target !== undefined) {
+    const validTargets = CLASH_PROFILE_TARGET_OPTIONS.map((option) => option.value);
+    if (
+      typeof obj.target !== 'string' ||
+      !validTargets.includes(obj.target as ClashProfileTarget)
+    ) {
+      errors.push({ message: `target must be one of: ${validTargets.join(', ')}` });
+    }
+  }
+
   // proxyGroups
   if (!Array.isArray(obj.proxyGroups)) {
     errors.push({ message: '"proxyGroups" must be an array' });
@@ -228,7 +254,10 @@ export function validateClashConfigStructure(raw: unknown): ClashConfigValidatio
     const rules = obj.rules as Array<unknown>;
     if (rules.length > 0) {
       const last = rules[rules.length - 1] as Record<string, unknown>;
-      const matchIdx = rules.findIndex((r) => typeof r === 'object' && r !== null && (r as Record<string, unknown>).type === 'MATCH');
+      const matchIdx = rules.findIndex(
+        (r) =>
+          typeof r === 'object' && r !== null && (r as Record<string, unknown>).type === 'MATCH'
+      );
       if (matchIdx !== -1 && matchIdx !== rules.length - 1) {
         errors.push({ message: 'MATCH rule must be the last rule' });
       }
@@ -304,11 +333,21 @@ function SourceEditor({ source, onChange }: SourceEditorProps) {
 
       {source.type === 'manual' && (
         <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Proxy names (comma-separated)</label>
+          <label className="block text-xs font-medium text-text-muted mb-1">
+            Proxy names (comma-separated)
+          </label>
           <input
             className="ip-input text-sm"
             value={source.proxies.join(', ')}
-            onChange={(e) => onChange({ type: 'manual', proxies: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+            onChange={(e) =>
+              onChange({
+                type: 'manual',
+                proxies: e.target.value
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              })
+            }
             placeholder="Node A, Node B"
           />
         </div>
@@ -316,11 +355,21 @@ function SourceEditor({ source, onChange }: SourceEditorProps) {
 
       {source.type === 'region' && (
         <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Keywords (comma-separated)</label>
+          <label className="block text-xs font-medium text-text-muted mb-1">
+            Keywords (comma-separated)
+          </label>
           <input
             className="ip-input text-sm"
             value={source.keywords.join(', ')}
-            onChange={(e) => onChange({ type: 'region', keywords: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+            onChange={(e) =>
+              onChange({
+                type: 'region',
+                keywords: e.target.value
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              })
+            }
             placeholder="香港, HK, Hong Kong"
           />
         </div>
@@ -328,11 +377,21 @@ function SourceEditor({ source, onChange }: SourceEditorProps) {
 
       {source.type === 'tag' && (
         <div>
-          <label className="block text-xs font-medium text-text-muted mb-1">Tags (comma-separated)</label>
+          <label className="block text-xs font-medium text-text-muted mb-1">
+            Tags (comma-separated)
+          </label>
           <input
             className="ip-input text-sm"
             value={source.tags.join(', ')}
-            onChange={(e) => onChange({ type: 'tag', tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+            onChange={(e) =>
+              onChange({
+                type: 'tag',
+                tags: e.target.value
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              })
+            }
             placeholder="premium, hk"
           />
         </div>
@@ -367,7 +426,15 @@ interface GroupEditorProps {
   onMoveDown: () => void;
 }
 
-function GroupEditor({ group, index, totalGroups, onChange, onDelete, onMoveUp, onMoveDown }: GroupEditorProps) {
+function GroupEditor({
+  group,
+  index,
+  totalGroups,
+  onChange,
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+}: GroupEditorProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -378,8 +445,12 @@ function GroupEditor({ group, index, totalGroups, onChange, onDelete, onMoveUp, 
         onClick={() => setExpanded((v) => !v)}
       >
         <span className="text-text-dim text-xs">{expanded ? '▼' : '▶'}</span>
-        <span className="flex-1 font-medium text-sm text-text truncate">{group.name || '(unnamed group)'}</span>
-        <span className="text-xs text-text-muted bg-surface-2 px-1.5 py-0.5 rounded">{group.type}</span>
+        <span className="flex-1 font-medium text-sm text-text truncate">
+          {group.name || '(unnamed group)'}
+        </span>
+        <span className="text-xs text-text-muted bg-surface-2 px-1.5 py-0.5 rounded">
+          {group.type}
+        </span>
         <span className="text-xs text-text-dim">{sourceLabel(group.source)}</span>
         <div className="flex items-center gap-1 ml-2" onClick={(e) => e.stopPropagation()}>
           <button
@@ -387,18 +458,24 @@ function GroupEditor({ group, index, totalGroups, onChange, onDelete, onMoveUp, 
             disabled={index === 0}
             onClick={onMoveUp}
             title="Move up"
-          >↑</button>
+          >
+            ↑
+          </button>
           <button
             className="p-1 rounded hover:bg-line disabled:opacity-30"
             disabled={index === totalGroups - 1}
             onClick={onMoveDown}
             title="Move down"
-          >↓</button>
+          >
+            ↓
+          </button>
           <button
             className="p-1 rounded hover:bg-danger/20 text-danger text-xs"
             onClick={onDelete}
             title="Delete group"
-          >✕</button>
+          >
+            ✕
+          </button>
         </div>
       </div>
 
@@ -430,7 +507,10 @@ function GroupEditor({ group, index, totalGroups, onChange, onDelete, onMoveUp, 
             </div>
           </div>
 
-          <SourceEditor source={group.source} onChange={(source) => onChange({ ...group, source })} />
+          <SourceEditor
+            source={group.source}
+            onChange={(source) => onChange({ ...group, source })}
+          />
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex items-center gap-2">
@@ -440,7 +520,9 @@ function GroupEditor({ group, index, totalGroups, onChange, onDelete, onMoveUp, 
                 checked={group.includeDirect ?? false}
                 onChange={(e) => onChange({ ...group, includeDirect: e.target.checked })}
               />
-              <label htmlFor={`direct-${index}`} className="text-xs text-text-muted">Include DIRECT</label>
+              <label htmlFor={`direct-${index}`} className="text-xs text-text-muted">
+                Include DIRECT
+              </label>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -449,16 +531,28 @@ function GroupEditor({ group, index, totalGroups, onChange, onDelete, onMoveUp, 
                 checked={group.includeReject ?? false}
                 onChange={(e) => onChange({ ...group, includeReject: e.target.checked })}
               />
-              <label htmlFor={`reject-${index}`} className="text-xs text-text-muted">Include REJECT</label>
+              <label htmlFor={`reject-${index}`} className="text-xs text-text-muted">
+                Include REJECT
+              </label>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-text-muted mb-1">Include other groups (comma-separated names)</label>
+            <label className="block text-xs font-medium text-text-muted mb-1">
+              Include other groups (comma-separated names)
+            </label>
             <input
               className="ip-input text-sm"
               value={(group.includeGroups ?? []).join(', ')}
-              onChange={(e) => onChange({ ...group, includeGroups: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+              onChange={(e) =>
+                onChange({
+                  ...group,
+                  includeGroups: e.target.value
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                })
+              }
               placeholder="♻️ 自动选择, 🇭🇰 香港自动"
             />
           </div>
@@ -475,21 +569,32 @@ function GroupEditor({ group, index, totalGroups, onChange, onDelete, onMoveUp, 
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Interval (s)</label>
+                <label className="block text-xs font-medium text-text-muted mb-1">
+                  Interval (s)
+                </label>
                 <input
                   type="number"
                   className="ip-input text-sm"
                   value={group.interval ?? 300}
-                  onChange={(e) => onChange({ ...group, interval: Number(e.target.value) || undefined })}
+                  onChange={(e) =>
+                    onChange({ ...group, interval: Number(e.target.value) || undefined })
+                  }
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-text-muted mb-1">Timeout (ms)</label>
+                <label className="block text-xs font-medium text-text-muted mb-1">
+                  Timeout (ms)
+                </label>
                 <input
                   type="number"
                   className="ip-input text-sm"
                   value={group.timeout ?? ''}
-                  onChange={(e) => onChange({ ...group, timeout: e.target.value ? Number(e.target.value) : undefined })}
+                  onChange={(e) =>
+                    onChange({
+                      ...group,
+                      timeout: e.target.value ? Number(e.target.value) : undefined,
+                    })
+                  }
                   placeholder="5000"
                 />
               </div>
@@ -512,7 +617,13 @@ interface RulesEditorProps {
 
 function RulesEditor({ rules, onChange }: RulesEditorProps) {
   const addRule = () => {
-    onChange([...rules.slice(0, -1), { type: 'DOMAIN-SUFFIX', value: '', policy: 'DIRECT' }, rules[rules.length - 1]].filter(Boolean));
+    onChange(
+      [
+        ...rules.slice(0, -1),
+        { type: 'DOMAIN-SUFFIX', value: '', policy: 'DIRECT' },
+        rules[rules.length - 1],
+      ].filter(Boolean)
+    );
   };
 
   const updateRule = (i: number, rule: RuleConfig) => {
@@ -554,20 +665,28 @@ function RulesEditor({ rules, onChange }: RulesEditorProps) {
                 type="checkbox"
                 id={`nr-${i}`}
                 checked={rule.noResolve ?? false}
-                onChange={(e) => updateRule(i, { ...rule, noResolve: e.target.checked || undefined })}
+                onChange={(e) =>
+                  updateRule(i, { ...rule, noResolve: e.target.checked || undefined })
+                }
                 title="no-resolve"
               />
-              <label htmlFor={`nr-${i}`} className="text-xs text-text-dim">NR</label>
+              <label htmlFor={`nr-${i}`} className="text-xs text-text-dim">
+                NR
+              </label>
               <button
                 className="p-1 text-danger hover:bg-danger/10 rounded text-xs"
                 onClick={() => deleteRule(i)}
                 title="Delete rule"
-              >✕</button>
+              >
+                ✕
+              </button>
             </div>
           </div>
         ))}
       </div>
-      <Button variant="ghost" size="sm" onClick={addRule}>+ Add Rule</Button>
+      <Button variant="ghost" size="sm" onClick={addRule}>
+        + Add Rule
+      </Button>
       <p className="text-xs text-text-dim">NR = no-resolve. The MATCH rule must be kept last.</p>
     </div>
   );
@@ -667,6 +786,13 @@ export function ClashConfigEditor({ value, onChange, onValidationChange }: Clash
     [config, onChange]
   );
 
+  const updateTarget = useCallback(
+    (target: ClashProfileTarget) => {
+      onChange({ ...config, target });
+    },
+    [config, onChange]
+  );
+
   const updateGroups = useCallback(
     (groups: ProxyGroupConfig[]) => {
       onChange({ ...config, proxyGroups: groups });
@@ -709,6 +835,7 @@ export function ClashConfigEditor({ value, onChange, onValidationChange }: Clash
   ];
 
   const hasYamlErrors = activeTab === 'yaml' && (!!yamlParseError || yamlStructErrors.length > 0);
+  const target = config.target ?? DEFAULT_CLASH_PROFILE_TARGET;
 
   return (
     <div className="space-y-3">
@@ -721,15 +848,13 @@ export function ClashConfigEditor({ value, onChange, onValidationChange }: Clash
               activeTab === t.key
                 ? 'border-b-2 border-primary text-primary bg-surface-1'
                 : t.key === 'yaml' && hasYamlErrors
-                ? 'text-danger hover:text-danger'
-                : 'text-text-muted hover:text-text'
+                  ? 'text-danger hover:text-danger'
+                  : 'text-text-muted hover:text-text'
             }`}
             onClick={() => handleTabChange(t.key)}
           >
             {t.label}
-            {t.key === 'yaml' && hasYamlErrors && (
-              <span className="ml-1 text-danger">⚠</span>
-            )}
+            {t.key === 'yaml' && hasYamlErrors && <span className="ml-1 text-danger">⚠</span>}
           </button>
         ))}
         <div className="flex-1" />
@@ -741,6 +866,31 @@ export function ClashConfigEditor({ value, onChange, onValidationChange }: Clash
       {/* General tab */}
       {activeTab === 'general' && (
         <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-text-muted mb-1">Profile Target</label>
+            <select
+              className="ip-input text-sm"
+              value={target}
+              onChange={(e) => updateTarget(e.target.value as ClashProfileTarget)}
+            >
+              {CLASH_PROFILE_TARGET_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {target === 'clash-legacy' && (
+              <p className="mt-1 text-xs text-warning">
+                当前 Clash legacy core 不支持 Hysteria2，已自动过滤。若要使用这些节点，请选择 Clash
+                Verge Rev / Mihomo / sing-box。
+              </p>
+            )}
+            {target === 'clash-verge-rev' && (
+              <p className="mt-1 text-xs text-success">
+                Clash Verge Rev 使用 Mihomo 内核，支持 Hysteria2。
+              </p>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1">Mode</label>
@@ -819,14 +969,14 @@ export function ClashConfigEditor({ value, onChange, onValidationChange }: Clash
               }}
             />
           ))}
-          <Button variant="ghost" size="sm" onClick={addGroup}>+ Add Group</Button>
+          <Button variant="ghost" size="sm" onClick={addGroup}>
+            + Add Group
+          </Button>
         </div>
       )}
 
       {/* Rules tab */}
-      {activeTab === 'rules' && (
-        <RulesEditor rules={config.rules} onChange={updateRules} />
-      )}
+      {activeTab === 'rules' && <RulesEditor rules={config.rules} onChange={updateRules} />}
 
       {/* Preview tab */}
       {activeTab === 'preview' && (
@@ -844,8 +994,8 @@ export function ClashConfigEditor({ value, onChange, onValidationChange }: Clash
       {activeTab === 'yaml' && (
         <div className="space-y-2">
           <p className="text-xs text-text-dim">
-            Edit the ClashConfig directly as YAML. Changes are applied immediately when the YAML is valid.
-            You can also copy-paste a config from another profile.
+            Edit the ClashConfig directly as YAML. Changes are applied immediately when the YAML is
+            valid. You can also copy-paste a config from another profile.
           </p>
           <textarea
             className={`w-full min-h-72 p-3 rounded border font-mono text-xs leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-primary/30 ${
@@ -871,7 +1021,9 @@ export function ClashConfigEditor({ value, onChange, onValidationChange }: Clash
           {/* Structural validation errors */}
           {!yamlParseError && yamlStructErrors.length > 0 && (
             <div className="rounded border border-danger/40 bg-danger/5 px-3 py-2 text-xs text-danger space-y-1">
-              <p className="font-semibold">Validation errors ({yamlStructErrors.length}) — cannot save until fixed</p>
+              <p className="font-semibold">
+                Validation errors ({yamlStructErrors.length}) — cannot save until fixed
+              </p>
               <ul className="list-disc list-inside space-y-0.5">
                 {yamlStructErrors.map((e, i) => (
                   <li key={i}>{e.message}</li>

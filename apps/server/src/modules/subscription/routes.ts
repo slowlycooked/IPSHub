@@ -20,7 +20,7 @@ interface SubscriptionContext {
 
 type SubscriptionRouteRequest = FastifyRequest<{
   Params: { profileName: string };
-  Querystring: { token?: string };
+  Querystring: { token?: string; target?: string };
 }>;
 
 /**
@@ -109,7 +109,7 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
   // GET /sub/clash/:profileName?token=xxx
   app.get<{
     Params: { profileName: string };
-    Querystring: { token?: string };
+    Querystring: { token?: string; target?: string };
   }>('/sub/clash/:profileName', async (request, reply) => {
     try {
       const context = resolveSubscriptionContext(request, reply, 'clash');
@@ -117,12 +117,17 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
         return context;
       }
 
-      const content = renderClashProfile(context.profile.clash_config, context.nodes);
+      const content = renderClashProfile(context.profile.clash_config, context.nodes, {
+        target: request.query.target,
+      });
       reply.type('application/yaml');
       reply.header('Content-Disposition', `attachment; filename="${context.profile.name}.yaml"`);
       return content;
     } catch (error) {
-      if (error instanceof Error && error.message === 'No supported nodes available for this profile') {
+      if (
+        error instanceof Error &&
+        error.message === 'No supported nodes available for this profile'
+      ) {
         return sendJsonError(reply, 422, 'No supported nodes available for this profile');
       }
 
@@ -186,7 +191,10 @@ export async function registerSubscriptionRoutes(app: FastifyInstance): Promise<
 
       const content = renderProvider(context.nodes);
       reply.type('application/yaml');
-      reply.header('Content-Disposition', `attachment; filename="${context.profile.name}-provider.yaml"`);
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="${context.profile.name}-provider.yaml"`
+      );
       return content;
     } catch (error) {
       logger.error('Provider subscription error', error);

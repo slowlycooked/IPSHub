@@ -1,6 +1,7 @@
 import { ProxyNode } from '@/types/proxy';
 import {
   ClashConfig,
+  ClashProfileTarget,
   ProxyGroupConfig,
   ProxyGroupSource,
   RuleConfig,
@@ -11,13 +12,61 @@ import { createLogger } from '@/utils/logger';
 
 const logger = createLogger('render-clash-profile');
 
-const CLASH_SUPPORTED_PROTOCOLS = new Set([
-  'ss', 'vmess', 'trojan', 'vless', 'socks5', 'http', 'hysteria2',
+export const DEFAULT_CLASH_PROFILE_TARGET: ClashProfileTarget = 'clash-verge-rev';
+
+const LEGACY_CLASH_SUPPORTED_PROTOCOLS = new Set([
+  'ss',
+  'vmess',
+  'trojan',
+  'vless',
+  'socks5',
+  'http',
 ]);
+
+const MIHOMO_SUPPORTED_PROTOCOLS = new Set([...LEGACY_CLASH_SUPPORTED_PROTOCOLS, 'hysteria2']);
 
 const DEFAULT_PROXY_POLICY = '🚀 节点选择';
 const LOYALSOLDIER_RULESET_BASE_URL =
   'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release';
+
+export function normalizeClashProfileTarget(target: string | null | undefined): ClashProfileTarget {
+  if (!target) {
+    return DEFAULT_CLASH_PROFILE_TARGET;
+  }
+
+  const normalized = target
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+  switch (normalized) {
+    case 'clash-legacy':
+    case 'clash-for-windows':
+    case 'clash-for-windows-legacy':
+    case 'cfw':
+    case 'legacy':
+      return 'clash-legacy';
+    case 'clash-verge-rev':
+    case 'clash-verge':
+    case 'verge':
+    case 'verge-rev':
+      return 'clash-verge-rev';
+    case 'mihomo':
+      return 'mihomo';
+    case 'clash-meta':
+    case 'clash.meta':
+    case 'meta':
+      return 'clash-meta';
+    case 'sing-box':
+    case 'singbox':
+      return 'sing-box';
+    default:
+      return DEFAULT_CLASH_PROFILE_TARGET;
+  }
+}
+
+function supportedProtocolsForTarget(target: ClashProfileTarget): Set<string> {
+  return target === 'clash-legacy' ? LEGACY_CLASH_SUPPORTED_PROTOCOLS : MIHOMO_SUPPORTED_PROTOCOLS;
+}
 
 function buildLoyalsoldierRuleProvider(
   name: string,
@@ -80,6 +129,7 @@ function withLoyalsoldierRulesForLegacyDefault(config: ClashConfig): ClashConfig
  */
 export function buildDefaultClashConfig(): ClashConfig {
   return {
+    target: DEFAULT_CLASH_PROFILE_TARGET,
     general: {
       mode: 'rule',
       logLevel: 'info',
@@ -180,9 +230,7 @@ export function resolveGroupProxies(
 
     case 'region': {
       const keywords = source.keywords.map((k) => k.toLowerCase());
-      return proxyNames.filter((name) =>
-        keywords.some((kw) => name.toLowerCase().includes(kw))
-      );
+      return proxyNames.filter((name) => keywords.some((kw) => name.toLowerCase().includes(kw)));
     }
 
     case 'tag': {
@@ -233,12 +281,7 @@ export function validateClashConfig(
     errors.push('Proxy group names must be unique');
   }
 
-  const validPolicies = new Set<string>([
-    'DIRECT',
-    'REJECT',
-    ...proxyNames,
-    ...groupNames,
-  ]);
+  const validPolicies = new Set<string>(['DIRECT', 'REJECT', ...proxyNames, ...groupNames]);
 
   // 2. Validate rule policies and MATCH-last
   const ruleCount = config.rules.length;
@@ -259,9 +302,7 @@ export function validateClashConfig(
   for (const group of config.proxyGroups) {
     const resolved = resolveGroupProxies(group.source, proxyNames, nodes);
     const hasProxies =
-      resolved.length > 0 ||
-      (group.includeDirect ?? false) ||
-      (group.includeReject ?? false);
+      resolved.length > 0 || (group.includeDirect ?? false) || (group.includeReject ?? false);
     const hasIncludedGroups = (group.includeGroups ?? []).length > 0;
     if (!hasProxies && !hasIncludedGroups) {
       errors.push(`Proxy group "${group.name}" resolves to no proxies and has no included groups`);
@@ -289,9 +330,12 @@ function buildRuleString(rule: RuleConfig): string {
  */
 export function renderClashProfile(
   clashConfig: ClashConfig | null | undefined,
-  nodes: ProxyNode[]
+  nodes: ProxyNode[],
+  options: { target?: ClashProfileTarget | string | null } = {}
 ): string {
-  const supportedNodes = nodes.filter((n) => CLASH_SUPPORTED_PROTOCOLS.has(n.protocol));
+  const target = normalizeClashProfileTarget(options.target ?? clashConfig?.target);
+  const supportedProtocols = supportedProtocolsForTarget(target);
+  const supportedNodes = nodes.filter((n) => supportedProtocols.has(n.protocol));
 
   if (supportedNodes.length === 0) {
     throw new Error('No supported nodes available for this profile');
@@ -396,10 +440,7 @@ function renderWithConfig(
 }
 
 /** Safe minimal fallback when even the default config cannot be validated. */
-function renderSafeMinimal(
-  proxies: Record<string, unknown>[],
-  proxyNames: string[]
-): string {
+function renderSafeMinimal(proxies: Record<string, unknown>[], proxyNames: string[]): string {
   const output: Record<string, unknown> = {
     port: 7890,
     'socks-port': 7891,

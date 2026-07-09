@@ -3,7 +3,13 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { profilesApi, type ProfilePayload } from '@/api/profiles';
 import { fetchServerConfig } from '@/api/config';
 import { queryClient } from '@/api/queryClient';
-import type { OutputType, Profile, ProfileUrls, ClashConfig } from '@/types/profile';
+import type {
+  OutputType,
+  Profile,
+  ProfileUrls,
+  ClashConfig,
+  ClashProfileTarget,
+} from '@/types/profile';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -17,7 +23,11 @@ import { Modal } from '@/components/ui/Modal';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
 import { formatDateTime, truncate } from '@/utils/format';
-import { ClashConfigEditor, buildDefaultClashConfig, type ClashConfigValidationError } from '@/components/profiles/ClashConfigEditor';
+import {
+  ClashConfigEditor,
+  buildDefaultClashConfig,
+  type ClashConfigValidationError,
+} from '@/components/profiles/ClashConfigEditor';
 
 interface FormState {
   name: string;
@@ -32,7 +42,10 @@ interface IssuedTokenState {
   name: string;
   token: string;
   output_format: OutputType;
+  target?: ClashProfileTarget;
 }
+
+const DEFAULT_CLASH_PROFILE_TARGET: ClashProfileTarget = 'clash-verge-rev';
 
 const defaultForm: FormState = {
   name: '',
@@ -65,23 +78,31 @@ function toPayload(form: FormState): ProfilePayload {
 
 declare const __BACKEND_ORIGIN__: string;
 
-function buildProfileUrls(name: string, token: string, serverBaseUrl: string): ProfileUrls {
+function buildProfileUrls(
+  name: string,
+  token: string,
+  serverBaseUrl: string,
+  target: ClashProfileTarget = DEFAULT_CLASH_PROFILE_TARGET
+): ProfileUrls {
   // Priority: APP_BASE_URL from server config > dev backend origin > current origin
   let origin: string;
   if (serverBaseUrl) {
     origin = serverBaseUrl;
   } else if (import.meta.env.DEV) {
-    origin = typeof __BACKEND_ORIGIN__ !== 'undefined' ? __BACKEND_ORIGIN__ : window.location.origin;
+    origin =
+      typeof __BACKEND_ORIGIN__ !== 'undefined' ? __BACKEND_ORIGIN__ : window.location.origin;
   } else {
     origin = window.location.origin;
   }
   const encodedName = encodeURIComponent(name);
+  const tokenParam = `token=${encodeURIComponent(token)}`;
+  const clashTargetParam = `target=${encodeURIComponent(target)}`;
 
   return {
-    clash: `${origin}/sub/clash/${encodedName}?token=${token}`,
-    loon: `${origin}/sub/loon/${encodedName}?token=${token}`,
-    raw: `${origin}/sub/raw/${encodedName}?token=${token}`,
-    provider: `${origin}/sub/provider/${encodedName}?token=${token}`,
+    clash: `${origin}/sub/clash/${encodedName}?${tokenParam}&${clashTargetParam}`,
+    loon: `${origin}/sub/loon/${encodedName}?${tokenParam}`,
+    raw: `${origin}/sub/raw/${encodedName}?${tokenParam}`,
+    provider: `${origin}/sub/provider/${encodedName}?${tokenParam}`,
   };
 }
 
@@ -93,7 +114,7 @@ const URL_KEY_MAP: Record<OutputType, keyof ProfileUrls> = {
 };
 
 const URL_LABELS: Record<keyof ProfileUrls, string> = {
-  clash: 'Clash YAML',
+  clash: 'Clash Verge Rev / Mihomo',
   provider: 'Clash Provider',
   loon: 'Loon',
   raw: 'Raw (URI List)',
@@ -121,7 +142,9 @@ interface FormDrawerProps {
 
 function FormDrawer({ open, selected, form, setForm, onClose, onSave, isSaving }: FormDrawerProps) {
   const [activeTab, setActiveTab] = useState<FormDrawerTab>('basic');
-  const [clashValidationErrors, setClashValidationErrors] = useState<ClashConfigValidationError[]>([]);
+  const [clashValidationErrors, setClashValidationErrors] = useState<ClashConfigValidationError[]>(
+    []
+  );
 
   const hasClashErrors = clashValidationErrors.length > 0;
 
@@ -143,7 +166,9 @@ function FormDrawer({ open, selected, form, setForm, onClose, onSave, isSaving }
             </p>
           )}
           <div className="flex gap-3 ml-auto">
-            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
             <Button
               variant="primary"
               isLoading={isSaving}
@@ -166,8 +191,8 @@ function FormDrawer({ open, selected, form, setForm, onClose, onSave, isSaving }
               activeTab === tab
                 ? 'border-b-2 border-primary text-primary bg-surface-1'
                 : tab === 'clash' && hasClashErrors
-                ? 'text-danger hover:text-danger'
-                : 'text-text-muted hover:text-text'
+                  ? 'text-danger hover:text-danger'
+                  : 'text-text-muted hover:text-text'
             }`}
             onClick={() => setActiveTab(tab)}
           >
@@ -204,9 +229,11 @@ function FormDrawer({ open, selected, form, setForm, onClose, onSave, isSaving }
             <select
               className="ip-input"
               value={form.output_format}
-              onChange={(e) => setForm((prev) => ({ ...prev, output_format: e.target.value as OutputType }))}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, output_format: e.target.value as OutputType }))
+              }
             >
-              <option value="clash">Clash YAML</option>
+              <option value="clash">Clash Verge Rev / Mihomo YAML</option>
               <option value="clash_provider">Clash Provider</option>
               <option value="loon">Loon</option>
               <option value="raw">Raw (Shadowsocks URI)</option>
@@ -214,7 +241,9 @@ function FormDrawer({ open, selected, form, setForm, onClose, onSave, isSaving }
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-text-muted mb-2">Include Protocols</label>
+            <label className="block text-sm font-medium text-text-muted mb-2">
+              Include Protocols
+            </label>
             <input
               className="ip-input"
               placeholder="ss, vmess, trojan (comma-separated)"
@@ -224,7 +253,9 @@ function FormDrawer({ open, selected, form, setForm, onClose, onSave, isSaving }
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-text-muted mb-2">Exclude Keywords</label>
+            <label className="block text-sm font-medium text-text-muted mb-2">
+              Exclude Keywords
+            </label>
             <input
               className="ip-input"
               placeholder="过期, 剩余, Traffic (comma-separated)"
@@ -238,8 +269,8 @@ function FormDrawer({ open, selected, form, setForm, onClose, onSave, isSaving }
       {activeTab === 'clash' && (
         <div>
           <p className="text-xs text-text-dim mb-3">
-            Configure the proxy groups and rules for the Clash subscription output.
-            Leave at default if unsure — the template works out of the box.
+            Configure the proxy groups and rules for the Clash subscription output. Leave at default
+            if unsure — the template works out of the box.
           </p>
           <ClashConfigEditor
             value={form.clash_config}
@@ -292,7 +323,12 @@ export function ProfilesPage() {
       setOpenForm(false);
 
       if (data.profile.token) {
-        setIssuedToken({ name: data.profile.name, token: data.profile.token, output_format: data.profile.output_format });
+        setIssuedToken({
+          name: data.profile.name,
+          token: data.profile.token,
+          output_format: data.profile.output_format,
+          target: data.profile.clash_config?.target,
+        });
       }
     },
   });
@@ -327,7 +363,12 @@ export function ProfilesPage() {
       setRegenerateTarget(null);
 
       if (data.profile.token) {
-        setIssuedToken({ name: data.profile.name, token: data.profile.token, output_format: data.profile.output_format });
+        setIssuedToken({
+          name: data.profile.name,
+          token: data.profile.token,
+          output_format: data.profile.output_format,
+          target: data.profile.clash_config?.target,
+        });
       }
     },
   });
@@ -373,7 +414,9 @@ export function ProfilesPage() {
     return <ErrorState message="Failed to load profiles." onRetry={() => refetch()} />;
   }
 
-  const issuedUrls = issuedToken ? buildProfileUrls(issuedToken.name, issuedToken.token, serverBaseUrl) : null;
+  const issuedUrls = issuedToken
+    ? buildProfileUrls(issuedToken.name, issuedToken.token, serverBaseUrl, issuedToken.target)
+    : null;
 
   return (
     <div>
@@ -390,7 +433,7 @@ export function ProfilesPage() {
       {profiles.length === 0 ? (
         <Card className="mt-0">
           <div className="p-8">
-            <EmptyState 
+            <EmptyState
               title="No profiles yet"
               description="Create your first profile to generate subscription URLs."
               action={{ label: 'Create Profile', onClick: openCreate }}
@@ -404,7 +447,9 @@ export function ProfilesPage() {
               {/* Header */}
               <div className="mb-4 pb-4 border-b border-line">
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <h3 className="font-display text-lg font-semibold text-primary flex-1 break-words">{profile.name}</h3>
+                  <h3 className="font-display text-lg font-semibold text-primary flex-1 break-words">
+                    {profile.name}
+                  </h3>
                   <StatusBadge tone="primary">{profile.output_format}</StatusBadge>
                 </div>
                 {profile.description && (
@@ -423,7 +468,9 @@ export function ProfilesPage() {
                 {profile.exclude_keywords && profile.exclude_keywords.length > 0 && (
                   <div>
                     <p className="text-xs font-medium text-text-muted mb-1">Exclude Keywords</p>
-                    <p className="text-text text-xs">{truncate(profile.exclude_keywords.join(', '), 60)}</p>
+                    <p className="text-text text-xs">
+                      {truncate(profile.exclude_keywords.join(', '), 60)}
+                    </p>
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2 pt-2">
@@ -433,15 +480,17 @@ export function ProfilesPage() {
                   </div>
                   <div className="rounded border border-line bg-surface-1 p-2">
                     <p className="text-xs text-text-dim">Updated</p>
-                    <p className="text-xs text-text-muted">{formatDateTime(profile.updated_at).split(' ')[0]}</p>
+                    <p className="text-xs text-text-muted">
+                      {formatDateTime(profile.updated_at).split(' ')[0]}
+                    </p>
                   </div>
                 </div>
               </div>
 
               {/* Actions */}
               <div className="space-y-2">
-                <Button 
-                  variant="secondary" 
+                <Button
+                  variant="secondary"
                   size="md"
                   className="w-full"
                   onClick={() => setUrlsModal(profile)}
@@ -449,16 +498,16 @@ export function ProfilesPage() {
                   View URLs
                 </Button>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button 
-                    variant="ghost" 
+                  <Button
+                    variant="ghost"
                     size="sm"
                     className="w-full"
                     onClick={() => openEdit(profile)}
                   >
                     Edit
                   </Button>
-                  <Button 
-                    variant="ghost" 
+                  <Button
+                    variant="ghost"
                     size="sm"
                     className="w-full"
                     onClick={() => setRegenerateTarget(profile)}
@@ -467,8 +516,8 @@ export function ProfilesPage() {
                     Regen Token
                   </Button>
                 </div>
-                <Button 
-                  variant="danger" 
+                <Button
+                  variant="danger"
                   size="sm"
                   className="w-full"
                   onClick={() => setDeleteTarget(profile)}
@@ -499,52 +548,65 @@ export function ProfilesPage() {
         onClose={() => setUrlsModal(null)}
         widthClassName="max-w-2xl"
       >
-        {urlsModal && (() => {
-          if (!hasUsableToken(urlsModal.token)) {
+        {urlsModal &&
+          (() => {
+            if (!hasUsableToken(urlsModal.token)) {
+              return (
+                <div className="space-y-4">
+                  <div className="bg-surface-1 border border-line rounded-lg p-4 text-sm text-text-muted">
+                    Regenerate Token to view subscription URLs.
+                  </div>
+                </div>
+              );
+            }
+
+            const urls = buildProfileUrls(
+              urlsModal.name,
+              urlsModal.token,
+              serverBaseUrl,
+              urlsModal.clash_config?.target
+            );
+            const primaryKey = URL_KEY_MAP[urlsModal.output_format];
+            const otherEntries = (Object.entries(urls) as [keyof ProfileUrls, string][]).filter(
+              ([k]) => k !== primaryKey
+            );
             return (
               <div className="space-y-4">
-                <div className="bg-surface-1 border border-line rounded-lg p-4 text-sm text-text-muted">
-                  Regenerate Token to view subscription URLs.
+                <div className="border-2 border-accent rounded-md p-4 bg-white">
+                  <p className="text-xs font-medium text-accent mb-2 uppercase tracking-wider">
+                    {URL_LABELS[primaryKey]} — Primary
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
+                      {urls[primaryKey]}
+                    </code>
+                    <CopyButton text={urls[primaryKey]} label="Copy" />
+                  </div>
                 </div>
+                <details className="group">
+                  <summary className="cursor-pointer text-xs text-text-dim select-none list-none flex items-center gap-1">
+                    <span className="group-open:hidden">▶</span>
+                    <span className="hidden group-open:inline">▼</span> Other formats
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    {otherEntries.map(([key, url]) => (
+                      <div key={key} className="border border-line rounded-md p-3 bg-white">
+                        <p className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+                          {URL_LABELS[key]}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <code className="flex-1 text-xs font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
+                            {url}
+                          </code>
+                          <CopyButton text={url} label="Copy" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
               </div>
             );
-          }
-
-          const urls = buildProfileUrls(urlsModal.name, urlsModal.token, serverBaseUrl);
-          const primaryKey = URL_KEY_MAP[urlsModal.output_format];
-          const otherEntries = (Object.entries(urls) as [keyof ProfileUrls, string][]).filter(([k]) => k !== primaryKey);
-          return (
-            <div className="space-y-4">
-              <div className="border-2 border-accent rounded-md p-4 bg-white">
-                <p className="text-xs font-medium text-accent mb-2 uppercase tracking-wider">{URL_LABELS[primaryKey]} — Primary</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
-                    {urls[primaryKey]}
-                  </code>
-                  <CopyButton text={urls[primaryKey]} label="Copy" />
-                </div>
-              </div>
-              <details className="group">
-                <summary className="cursor-pointer text-xs text-text-dim select-none list-none flex items-center gap-1">
-                  <span className="group-open:hidden">▶</span><span className="hidden group-open:inline">▼</span> Other formats
-                </summary>
-                <div className="mt-3 space-y-3">
-                  {otherEntries.map(([key, url]) => (
-                    <div key={key} className="border border-line rounded-md p-3 bg-white">
-                      <p className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">{URL_LABELS[key]}</p>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 text-xs font-mono text-primary break-all p-2 bg-surface-1 rounded border border-line">
-                          {url}
-                        </code>
-                        <CopyButton text={url} label="Copy" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            </div>
-          );
-        })()}
+          })()}
       </Modal>
 
       {/* Issued Token Modal */}
@@ -572,11 +634,15 @@ export function ProfilesPage() {
               <p className="text-sm font-medium text-text">Subscription URLs</p>
               {(() => {
                 const primaryKey = URL_KEY_MAP[issuedToken.output_format];
-                const otherEntries = (Object.entries(issuedUrls) as [keyof ProfileUrls, string][]).filter(([k]) => k !== primaryKey);
+                const otherEntries = (
+                  Object.entries(issuedUrls) as [keyof ProfileUrls, string][]
+                ).filter(([k]) => k !== primaryKey);
                 return (
                   <>
                     <div className="border-2 border-accent rounded-md p-3 bg-white">
-                      <p className="text-xs font-medium text-accent mb-2 uppercase">{URL_LABELS[primaryKey]} — Primary</p>
+                      <p className="text-xs font-medium text-accent mb-2 uppercase">
+                        {URL_LABELS[primaryKey]} — Primary
+                      </p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 text-xs font-mono text-primary break-all p-1.5 bg-surface-1 rounded text-xs border border-line">
                           {issuedUrls[primaryKey]}
@@ -586,12 +652,15 @@ export function ProfilesPage() {
                     </div>
                     <details className="group">
                       <summary className="cursor-pointer text-xs text-text-dim select-none list-none flex items-center gap-1">
-                        <span className="group-open:hidden">▶</span><span className="hidden group-open:inline">▼</span> Other formats
+                        <span className="group-open:hidden">▶</span>
+                        <span className="hidden group-open:inline">▼</span> Other formats
                       </summary>
                       <div className="mt-2 space-y-2">
                         {otherEntries.map(([key, url]) => (
                           <div key={key} className="border border-line rounded-md p-3 bg-white">
-                            <p className="text-xs font-medium text-text-muted mb-2 uppercase">{URL_LABELS[key]}</p>
+                            <p className="text-xs font-medium text-text-muted mb-2 uppercase">
+                              {URL_LABELS[key]}
+                            </p>
                             <div className="flex items-center gap-2">
                               <code className="flex-1 text-xs font-mono text-primary break-all p-1.5 bg-surface-1 rounded text-xs border border-line">
                                 {url}
