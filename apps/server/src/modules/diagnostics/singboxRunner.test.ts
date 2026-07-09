@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveSingBoxBinary, resetSingBoxBinaryCacheForTests } from './singboxRunner';
+import { buildCurlCommand, resolveSingBoxBinary, resetSingBoxBinaryCacheForTests } from './singboxRunner';
 
 let tempDir: string;
 
@@ -104,5 +104,35 @@ describe('resolveSingBoxBinary', () => {
     expect(result.explanation).toContain(`Current PATH: ${missingPathDir}`);
     expect(result.explanation).toContain('Attempted paths:');
     expect(result.explanation).toContain('SING_BOX_PATH');
+  });
+});
+
+describe('buildCurlCommand', () => {
+  it('uses socks5 hostname proxy arguments for a sing-box socks inbound', () => {
+    expect(buildCurlCommand('socks', 23001, 'https://www.gstatic.com/generate_204')).toEqual([
+      'curl',
+      '-v',
+      '--socks5-hostname',
+      '127.0.0.1:23001',
+      'https://www.gstatic.com/generate_204',
+      '--connect-timeout',
+      '5',
+      '--max-time',
+      '10',
+    ]);
+  });
+
+  it('uses http proxy arguments for a sing-box http inbound', () => {
+    expect(buildCurlCommand('http', 23002, 'https://www.gstatic.com/generate_204')).toEqual([
+      'curl',
+      '-v',
+      '-x',
+      'http://127.0.0.1:23002',
+      'https://www.gstatic.com/generate_204',
+      '--connect-timeout',
+      '5',
+      '--max-time',
+      '10',
+    ]);
   });
 });

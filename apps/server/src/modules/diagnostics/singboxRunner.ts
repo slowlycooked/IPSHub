@@ -4,6 +4,7 @@ import { createServer, Socket } from 'node:net';
 import { delimiter, join } from 'node:path';
 import type { ProxyNode } from '@/types/proxy';
 import { createLogger } from '@/utils/logger';
+import { sanitizeJson, sanitizeUrl } from '@/utils/sanitize';
 
 const logger = createLogger('singbox-runner');
 
@@ -177,7 +178,15 @@ export function releasePort(port: number): void {
 // sing-box config builder
 // ---------------------------------------------------------------------------
 
-export function buildSingBoxConfig(node: ProxyNode, socksPort: number): Record<string, unknown> {
+type SingBoxInboundType = 'socks' | 'http';
+
+const DEFAULT_INBOUND_TYPE: SingBoxInboundType = 'socks';
+
+export function buildSingBoxConfig(
+  node: ProxyNode,
+  listenPort: number,
+  inboundType: SingBoxInboundType = DEFAULT_INBOUND_TYPE,
+): Record<string, unknown> {
   const outbound = buildOutbound(node);
   if (!outbound) return {};
 
@@ -185,10 +194,10 @@ export function buildSingBoxConfig(node: ProxyNode, socksPort: number): Record<s
     log: { level: 'warn', timestamp: false },
     inbounds: [
       {
-        type: 'socks',
-        tag: 'socks-in',
+        type: inboundType,
+        tag: `${inboundType}-in`,
         listen: '127.0.0.1',
-        listen_port: socksPort,
+        listen_port: listenPort,
       },
     ],
     outbounds: [
@@ -336,82 +345,236 @@ function buildTransportConfig(node: ProxyNode): Record<string, unknown> | null {
 }
 
 // ---------------------------------------------------------------------------
-// Wait for SOCKS5 port to become available
+// Wait for local inbound port to become available
 // ---------------------------------------------------------------------------
 
-async function waitForPort(port: number, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const ready = await new Promise<boolean>((resolve) => {
-      const sock = new Socket();
-      sock.setTimeout(300);
-      sock.once('connect', () => {
-        sock.destroy();
-        resolve(true);
-      });
-      sock.once('error', () => resolve(false));
-      sock.once('timeout', () => resolve(false));
-      sock.connect(port, '127.0.0.1');
+export interface PortReadyCheckResult {
+  host: string;
+  port: number;
+  ready: boolean;
+  attempts: number;
+  timeoutMs: number;
+  intervalMs: number;
+  latencyMs: number;
+  stoppedBecause?: 'process_exited';
+}
+
+async function checkPort(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = new Socket();
+    sock.setTimeout(80);
+    sock.once('connect', () => {
+      sock.destroy();
+      resolve(true);
     });
-    if (ready) return true;
-    await new Promise((r) => setTimeout(r, 200));
+    sock.once('error', () => resolve(false));
+    sock.once('timeout', () => {
+      sock.destroy();
+      resolve(false);
+    });
+    sock.connect(port, host);
+  });
+}
+
+async function waitForPort(
+  port: number,
+  timeoutMs: number,
+  intervalMs: number,
+  isProcessExited: () => boolean,
+): Promise<PortReadyCheckResult> {
+  const host = '127.0.0.1';
+  const start = Date.now();
+  let attempts = 0;
+
+  while (Date.now() - start < timeoutMs) {
+    if (isProcessExited()) {
+      return {
+        host,
+        port,
+        ready: false,
+        attempts,
+        timeoutMs,
+        intervalMs,
+        latencyMs: Date.now() - start,
+        stoppedBecause: 'process_exited',
+      };
+    }
+
+    attempts += 1;
+    if (await checkPort(host, port)) {
+      return {
+        host,
+        port,
+        ready: true,
+        attempts,
+        timeoutMs,
+        intervalMs,
+        latencyMs: Date.now() - start,
+      };
+    }
+
+    await new Promise((r) => setTimeout(r, intervalMs));
   }
-  return false;
+
+  return {
+    host,
+    port,
+    ready: false,
+    attempts,
+    timeoutMs,
+    intervalMs,
+    latencyMs: Date.now() - start,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// Probe HTTP via curl through SOCKS5
+// Probe HTTP via curl through the selected local inbound
 // ---------------------------------------------------------------------------
 
 export interface CurlProbeResult {
   ok: boolean;
   latencyMs: number;
   httpCode?: number;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+  command: string[];
+  redactedCommand: string;
   error?: string;
 }
 
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:=@%+-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function commandToString(command: string[]): string {
+  return command.map(shellQuote).join(' ');
+}
+
+function redactCurlCommandArgs(command: string[]): string[] {
+  return command.map((arg) => {
+    if (arg.startsWith('http://') || arg.startsWith('https://')) {
+      return sanitizeUrl(arg) ?? arg;
+    }
+    return arg;
+  });
+}
+
+export function buildCurlCommand(
+  inboundType: SingBoxInboundType,
+  listenPort: number,
+  testUrl: string,
+): string[] {
+  const proxy = `127.0.0.1:${listenPort}`;
+  if (inboundType === 'socks') {
+    return [
+      'curl',
+      '-v',
+      '--socks5-hostname',
+      proxy,
+      testUrl,
+      '--connect-timeout',
+      '5',
+      '--max-time',
+      '10',
+    ];
+  }
+
+  return [
+    'curl',
+    '-v',
+    '-x',
+    `http://${proxy}`,
+    testUrl,
+    '--connect-timeout',
+    '5',
+    '--max-time',
+    '10',
+  ];
+}
+
+function parseHttpCode(stderr: string): number | undefined {
+  const matches = [...stderr.matchAll(/< HTTP\/\S+\s+(\d{3})/g)];
+  if (matches.length === 0) return undefined;
+  return Number(matches[matches.length - 1][1]);
+}
+
 async function probeCurl(
-  socksPort: number,
+  inboundType: SingBoxInboundType,
+  listenPort: number,
   testUrl: string,
   timeoutMs: number,
 ): Promise<CurlProbeResult> {
   const start = Date.now();
-  return new Promise((resolve) => {
-    const curl = spawn('curl', [
-      '--socks5-hostname',
-      `127.0.0.1:${socksPort}`,
-      '-o', '/dev/null',
-      '-s',
-      '-w', '%{http_code}',
-      '--max-time', String(Math.ceil(timeoutMs / 1000)),
-      '--connect-timeout', String(Math.ceil(timeoutMs / 1000)),
-      testUrl,
-    ]);
+  const command = buildCurlCommand(inboundType, listenPort, testUrl);
+  const [cmd, ...args] = command;
 
+  return new Promise((resolve) => {
+    const curl = spawn(cmd, args);
+    let settled = false;
     let stdout = '';
     let stderr = '';
+
+    function finish(
+      result: Omit<CurlProbeResult, 'latencyMs' | 'command' | 'redactedCommand' | 'stdout' | 'stderr'>,
+    ): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const redactedCommandArgs = redactCurlCommandArgs(command);
+      resolve({
+        ...result,
+        latencyMs: Date.now() - start,
+        command: redactedCommandArgs,
+        redactedCommand: commandToString(redactedCommandArgs),
+        stdout,
+        stderr,
+      });
+    }
+
     curl.stdout?.on('data', (d: Buffer) => (stdout += d.toString()));
     curl.stderr?.on('data', (d: Buffer) => (stderr += d.toString()));
+    curl.once('error', (err) => {
+      stderr += err.message;
+      finish({
+        ok: false,
+        exitCode: null,
+        signal: null,
+        error: err.message,
+      });
+    });
 
     const timer = setTimeout(() => {
       curl.kill('SIGKILL');
-      resolve({ ok: false, latencyMs: Date.now() - start, error: 'curl timeout' });
-    }, timeoutMs + 1000);
+      finish({
+        ok: false,
+        exitCode: null,
+        signal: 'SIGKILL',
+        error: 'curl timeout',
+      });
+    }, Math.max(timeoutMs + 1000, 11_000));
 
-    curl.on('close', (code) => {
-      clearTimeout(timer);
-      const latencyMs = Date.now() - start;
-      const httpCode = parseInt(stdout.trim(), 10);
-      if (code === 0 && httpCode >= 200 && httpCode < 400) {
-        resolve({ ok: true, latencyMs, httpCode });
-      } else {
-        resolve({
-          ok: false,
-          latencyMs,
-          httpCode: isNaN(httpCode) ? undefined : httpCode,
-          error: stderr.trim() || `curl exit ${code}`,
+    curl.once('close', (code, signal) => {
+      const httpCode = parseHttpCode(stderr);
+      if (code === 0) {
+        finish({
+          ok: true,
+          httpCode,
+          exitCode: code,
+          signal,
         });
+        return;
       }
+
+      finish({
+        ok: false,
+        httpCode,
+        exitCode: code,
+        signal,
+        error: stderr.trim() || stdout.trim() || `curl exit ${code}`,
+      });
     });
   });
 }
@@ -430,6 +593,20 @@ export interface SingBoxProbeResult {
   version?: string;
   source?: SingBoxBinarySource;
   attemptedPaths?: string[];
+  tempConfigPath?: string;
+  generatedSingBoxConfig?: unknown;
+  selectedInboundType?: SingBoxInboundType;
+  selectedListenPort?: number;
+  portReadyCheck?: PortReadyCheckResult;
+  curl?: CurlProbeResult;
+  curlExitCode?: number | null;
+  curlStdout?: string;
+  curlStderr?: string;
+  curlCommand?: string;
+  singBoxStdout?: string;
+  singBoxStderr?: string;
+  singBoxExitCode?: number | null;
+  singBoxSignal?: NodeJS.Signals | null;
 }
 
 export async function probeThroughSingBox(
@@ -463,9 +640,9 @@ export async function probeThroughSingBox(
     };
   }
 
-  let socksPort: number;
+  let listenPort: number;
   try {
-    socksPort = await allocateSocksPort();
+    listenPort = await allocateSocksPort();
   } catch (err) {
     return {
       status: 'failed',
@@ -480,33 +657,83 @@ export async function probeThroughSingBox(
 
   const configDir = `/tmp/ipshub/diagnostics/${runId}`;
   const configPath = join(configDir, `${nodeId}-${label}.json`);
+  const selectedInboundType = DEFAULT_INBOUND_TYPE;
   let sbProcess: ReturnType<typeof spawn> | null = null;
+  let sbStdout = '';
+  let sbStderr = '';
+  let sbExited = false;
+  let sbExitCode: number | null = null;
+  let sbSignal: NodeJS.Signals | null = null;
 
   try {
     mkdirSync(configDir, { recursive: true });
-    const cfg = buildSingBoxConfig(node, socksPort);
+    const cfg = buildSingBoxConfig(node, listenPort, selectedInboundType);
+    const generatedSingBoxConfig = sanitizeJson(cfg);
     writeFileSync(configPath, JSON.stringify(cfg, null, 2));
 
     sbProcess = spawn(binaryResolution.resolvedPath, ['run', '-c', configPath], {
       stdio: 'pipe',
     });
+    sbProcess.stdout?.on('data', (d: Buffer) => (sbStdout += d.toString()));
+    sbProcess.stderr?.on('data', (d: Buffer) => (sbStderr += d.toString()));
+    sbProcess.once('close', (code, signal) => {
+      sbExited = true;
+      sbExitCode = code;
+      sbSignal = signal;
+    });
 
-    const ready = await waitForPort(socksPort, Math.min(timeoutMs, 5000));
-    if (!ready) {
+    const portReadyCheck = await waitForPort(listenPort, 3000, 100, () => sbExited);
+    if (!portReadyCheck.ready) {
+      const processExited = portReadyCheck.stoppedBecause === 'process_exited' || sbExited;
       return {
         status: 'failed',
         latencyMs: null,
-        error: 'sing-box SOCKS5 port did not become ready',
-        errorCode: 'SOCKS5_NOT_READY',
+        error: processExited
+          ? 'sing-box process exited before the local inbound became ready'
+          : 'sing-box inbound did not become ready',
+        errorCode: processExited ? 'SING_BOX_PROCESS_EXITED' : 'SING_BOX_INBOUND_NOT_READY',
         resolvedPath: binaryResolution.resolvedPath,
         version: binaryResolution.version,
         source: binaryResolution.source,
+        tempConfigPath: configPath,
+        generatedSingBoxConfig,
+        selectedInboundType,
+        selectedListenPort: listenPort,
+        portReadyCheck,
+        singBoxStdout: sbStdout,
+        singBoxStderr: sbStderr,
+        singBoxExitCode: sbExitCode,
+        singBoxSignal: sbSignal,
       };
     }
 
-    const urlToProbe = testUrls.find((u) => u.startsWith('http')) ?? 'http://www.gstatic.com/generate_204';
+    if (sbExited) {
+      return {
+        status: 'failed',
+        latencyMs: null,
+        error: 'sing-box process exited after the local inbound became ready but before curl probe',
+        errorCode: 'SING_BOX_PROCESS_EXITED',
+        resolvedPath: binaryResolution.resolvedPath,
+        version: binaryResolution.version,
+        source: binaryResolution.source,
+        tempConfigPath: configPath,
+        generatedSingBoxConfig,
+        selectedInboundType,
+        selectedListenPort: listenPort,
+        portReadyCheck,
+        singBoxStdout: sbStdout,
+        singBoxStderr: sbStderr,
+        singBoxExitCode: sbExitCode,
+        singBoxSignal: sbSignal,
+      };
+    }
+
+    const urlToProbe =
+      testUrls.find((u) => u.startsWith('https://')) ??
+      testUrls.find((u) => u.startsWith('http://')) ??
+      'https://www.gstatic.com/generate_204';
     const start = Date.now();
-    const curlResult = await probeCurl(socksPort, urlToProbe, timeoutMs);
+    const curlResult = await probeCurl(selectedInboundType, listenPort, urlToProbe, timeoutMs);
     const latencyMs = Date.now() - start;
 
     if (curlResult.ok) {
@@ -517,6 +744,20 @@ export async function probeThroughSingBox(
         resolvedPath: binaryResolution.resolvedPath,
         version: binaryResolution.version,
         source: binaryResolution.source,
+        tempConfigPath: configPath,
+        generatedSingBoxConfig,
+        selectedInboundType,
+        selectedListenPort: listenPort,
+        portReadyCheck,
+        curl: curlResult,
+        curlExitCode: curlResult.exitCode,
+        curlStdout: curlResult.stdout,
+        curlStderr: curlResult.stderr,
+        curlCommand: curlResult.redactedCommand,
+        singBoxStdout: sbStdout,
+        singBoxStderr: sbStderr,
+        singBoxExitCode: sbExitCode,
+        singBoxSignal: sbSignal,
       };
     }
     return {
@@ -524,9 +765,24 @@ export async function probeThroughSingBox(
       latencyMs: curlResult.latencyMs,
       httpCode: curlResult.httpCode,
       error: curlResult.error,
+      errorCode: curlResult.exitCode === 97 ? 'CURL_PROXY_HANDSHAKE_FAILED' : 'CURL_FAILED',
       resolvedPath: binaryResolution.resolvedPath,
       version: binaryResolution.version,
       source: binaryResolution.source,
+      tempConfigPath: configPath,
+      generatedSingBoxConfig,
+      selectedInboundType,
+      selectedListenPort: listenPort,
+      portReadyCheck,
+      curl: curlResult,
+      curlExitCode: curlResult.exitCode,
+      curlStdout: curlResult.stdout,
+      curlStderr: curlResult.stderr,
+      curlCommand: curlResult.redactedCommand,
+      singBoxStdout: sbStdout,
+      singBoxStderr: sbStderr,
+      singBoxExitCode: sbExitCode,
+      singBoxSignal: sbSignal,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -539,6 +795,13 @@ export async function probeThroughSingBox(
       resolvedPath: binaryResolution.resolvedPath,
       version: binaryResolution.version,
       source: binaryResolution.source,
+      tempConfigPath: configPath,
+      selectedInboundType,
+      selectedListenPort: listenPort,
+      singBoxStdout: sbStdout,
+      singBoxStderr: sbStderr,
+      singBoxExitCode: sbExitCode,
+      singBoxSignal: sbSignal,
     };
   } finally {
     if (sbProcess) {
@@ -548,7 +811,7 @@ export async function probeThroughSingBox(
         // already dead
       }
     }
-    releasePort(socksPort);
+    releasePort(listenPort);
     try {
       rmSync(configPath, { force: true });
     } catch {

@@ -9,6 +9,7 @@ import { getNodesByProviderId, type NodeDTO } from '@/modules/nodes/service';
 import { parseRequestHeaders } from '@/modules/providers/request-headers';
 import type { ProxyNode } from '@/types/proxy';
 import { createLogger } from '@/utils/logger';
+import { sanitizeJson } from '@/utils/sanitize';
 
 import {
   createDiagRun,
@@ -24,7 +25,12 @@ import { runRuntimePrecheck, type PrecheckResult } from './runtimeNetworkPrechec
 import { computeConfigDiff, hasCriticalDiff } from './configDiffService';
 import { validateClashConfig, validateLoonConfig } from './clientConfigValidator';
 import { diagnoseNode } from './diagnosisEngine';
-import { probeThroughSingBox, findSingBoxBinary, buildOutbound } from './singboxRunner';
+import {
+  probeThroughSingBox,
+  findSingBoxBinary,
+  buildOutbound,
+  type SingBoxProbeResult,
+} from './singboxRunner';
 
 const logger = createLogger('diagnostics-service');
 
@@ -189,6 +195,37 @@ interface NodePair {
   providerId: string;
 }
 
+function getSingBoxOutput(probe: SingBoxProbeResult | null): string {
+  if (!probe) return '';
+  return [probe.singBoxStdout, probe.singBoxStderr].filter(Boolean).join('\n');
+}
+
+function buildProbeLogDetail(probe: SingBoxProbeResult): Record<string, unknown> {
+  return {
+    latencyMs: probe.latencyMs,
+    ...(probe.resolvedPath ? { resolvedPath: probe.resolvedPath } : {}),
+    ...(probe.version ? { version: probe.version } : {}),
+    ...(probe.source ? { source: probe.source } : {}),
+    ...(probe.tempConfigPath ? { tempConfigPath: probe.tempConfigPath } : {}),
+    ...(probe.generatedSingBoxConfig ? { generatedSingBoxConfig: probe.generatedSingBoxConfig } : {}),
+    ...(probe.selectedInboundType ? { selectedInboundType: probe.selectedInboundType } : {}),
+    ...(probe.selectedListenPort ? { selectedListenPort: probe.selectedListenPort } : {}),
+    ...(probe.portReadyCheck ? { portReadyCheck: probe.portReadyCheck } : {}),
+    ...(probe.errorCode ? { errorCode: probe.errorCode } : {}),
+    ...(probe.error ? { error: probe.error } : {}),
+    ...(probe.attemptedPaths ? { attemptedPaths: probe.attemptedPaths } : {}),
+    ...(probe.curlCommand ? { curlCommand: probe.curlCommand } : {}),
+    ...(probe.curlExitCode !== undefined ? { curlExitCode: probe.curlExitCode } : {}),
+    ...(probe.curlStdout !== undefined ? { curlStdout: probe.curlStdout } : {}),
+    ...(probe.curlStderr !== undefined ? { curlStderr: probe.curlStderr } : {}),
+    ...(probe.curl ? { curl: probe.curl } : {}),
+    ...(probe.singBoxStdout !== undefined ? { singBoxStdout: probe.singBoxStdout } : {}),
+    ...(probe.singBoxStderr !== undefined ? { singBoxStderr: probe.singBoxStderr } : {}),
+    ...(probe.singBoxExitCode !== undefined ? { singBoxExitCode: probe.singBoxExitCode } : {}),
+    ...(probe.singBoxSignal !== undefined ? { singBoxSignal: probe.singBoxSignal } : {}),
+  };
+}
+
 function matchNodes(rawNodes: ProxyNode[], ipshubNodes: NodeDTO[], providerId: string): NodePair[] {
   const ipshubByFp = new Map<string, NodeDTO>();
   for (const n of ipshubNodes) {
@@ -288,6 +325,7 @@ async function processNodePair(
   let rawLatencyMs: number | null = null;
   let ipshubProbeStatus: 'ok' | 'failed' | 'skipped' | null = null;
   let ipshubLatencyMs: number | null = null;
+  let ipshubProbe: SingBoxProbeResult | null = null;
 
   const rawProbe = await probeThroughSingBox(
     pair.raw, runId, nodeId, 'raw', config.testUrls, config.timeoutMs,
@@ -296,34 +334,18 @@ async function processNodePair(
   rawLatencyMs = rawProbe.latencyMs;
   log('singbox-raw', rawProbe.status === 'ok' ? 'INFO' : rawProbe.status === 'skipped' ? 'DEBUG' : 'WARN',
     `Sing-box raw probe: ${rawProbe.status}`,
-    {
-      latencyMs: rawProbe.latencyMs,
-      ...(rawProbe.resolvedPath ? { resolvedPath: rawProbe.resolvedPath } : {}),
-      ...(rawProbe.version ? { version: rawProbe.version } : {}),
-      ...(rawProbe.source ? { source: rawProbe.source } : {}),
-      ...(rawProbe.errorCode ? { errorCode: rawProbe.errorCode } : {}),
-      ...(rawProbe.error ? { error: rawProbe.error } : {}),
-      ...(rawProbe.attemptedPaths ? { attemptedPaths: rawProbe.attemptedPaths } : {}),
-    },
+    buildProbeLogDetail(rawProbe),
   );
 
   if (pair.ipshub) {
-    const ipshubProbe = await probeThroughSingBox(
+    ipshubProbe = await probeThroughSingBox(
       pair.ipshub, runId, nodeId, 'ipshub', config.testUrls, config.timeoutMs,
     );
     ipshubProbeStatus = ipshubProbe.status === 'unsupported_protocol' ? 'skipped' : ipshubProbe.status;
     ipshubLatencyMs = ipshubProbe.latencyMs;
     log('singbox-ipshub', ipshubProbe.status === 'ok' ? 'INFO' : ipshubProbe.status === 'skipped' ? 'DEBUG' : 'WARN',
       `Sing-box IPSHub probe: ${ipshubProbe.status}`,
-      {
-        latencyMs: ipshubProbe.latencyMs,
-        ...(ipshubProbe.resolvedPath ? { resolvedPath: ipshubProbe.resolvedPath } : {}),
-        ...(ipshubProbe.version ? { version: ipshubProbe.version } : {}),
-        ...(ipshubProbe.source ? { source: ipshubProbe.source } : {}),
-        ...(ipshubProbe.errorCode ? { errorCode: ipshubProbe.errorCode } : {}),
-        ...(ipshubProbe.error ? { error: ipshubProbe.error } : {}),
-        ...(ipshubProbe.attemptedPaths ? { attemptedPaths: ipshubProbe.attemptedPaths } : {}),
-      },
+      buildProbeLogDetail(ipshubProbe),
     );
   }
 
@@ -338,12 +360,22 @@ async function processNodePair(
     runtimePrecheck,
     rawProbeStatus,
     ipshubProbeStatus,
+    rawCurlExitCode: rawProbe.curlExitCode,
+    ipshubCurlExitCode: ipshubProbe?.curlExitCode,
+    rawProbeErrorCode: rawProbe.errorCode,
+    ipshubProbeErrorCode: ipshubProbe?.errorCode,
+    rawSingBoxOutput: getSingBoxOutput(rawProbe),
+    ipshubSingBoxOutput: getSingBoxOutput(ipshubProbe),
   });
 
   log('diagnosis', 'INFO', `Diagnosis: ${diagnosis.code}`, { explanation: diagnosis.explanation });
 
   // P0: When a conversion issue is detected, log a full field-level breakdown to assist debugging.
-  if (diagnosis.code === 'LIKELY_IPSHUB_CONVERSION_ISSUE' && pair.ipshub) {
+  if (
+    (diagnosis.code === 'LIKELY_IPSHUB_CONVERSION_ISSUE' ||
+      diagnosis.code === 'IPSHUB_CONFIG_CONVERSION_FAILED') &&
+    pair.ipshub
+  ) {
     const rawOutbound = buildOutbound(pair.raw);
     const ipshubOutbound = buildOutbound(pair.ipshub);
     const fieldDiffs = diffs.map((d) => ({
@@ -400,6 +432,12 @@ async function processNodePair(
       hasCriticalDiff: hasCriticalDiff(diffs),
       clashErrors: clashResult.errors,
       loonErrors: loonResult.errors,
+      rawConfig: sanitizeJson(pair.raw),
+      ipshubConfig: pair.ipshub ? sanitizeJson(pair.ipshub) : null,
+      singBox: {
+        raw: buildProbeLogDetail(rawProbe),
+        ipshub: ipshubProbe ? buildProbeLogDetail(ipshubProbe) : null,
+      },
     }),
   });
 

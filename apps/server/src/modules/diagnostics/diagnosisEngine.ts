@@ -10,6 +10,11 @@ export type DiagnosisCode =
   | 'LIKELY_IPSHUB_RUNTIME_NETWORK_ISSUE'
   | 'SING_BOX_CONFIRMED_WORKING'
   | 'SING_BOX_CONFIRMED_FAILING'
+  | 'SING_BOX_PROCESS_EXITED'
+  | 'SING_BOX_INBOUND_NOT_READY'
+  | 'CURL_PROXY_HANDSHAKE_FAILED'
+  | 'IPSHUB_CONFIG_CONVERSION_FAILED'
+  | 'RAW_CONFIG_INVALID_BUT_IPSHUB_FIXED'
   | 'SING_BOX_PROBE_INCONSISTENCY'
   | 'PROVIDER_NODE_UNAVAILABLE'
   | 'INFO_NODE_NOT_TESTABLE'
@@ -27,6 +32,12 @@ export interface DiagnosisInput {
   runtimePrecheck: PrecheckResult | null;
   rawProbeStatus: 'ok' | 'failed' | 'skipped' | null;
   ipshubProbeStatus: 'ok' | 'failed' | 'skipped' | null;
+  rawCurlExitCode?: number | null;
+  ipshubCurlExitCode?: number | null;
+  rawProbeErrorCode?: string | null;
+  ipshubProbeErrorCode?: string | null;
+  rawSingBoxOutput?: string | null;
+  ipshubSingBoxOutput?: string | null;
 }
 
 export interface DiagnosisResult {
@@ -45,6 +56,12 @@ export function diagnoseNode(input: DiagnosisInput): DiagnosisResult {
     runtimePrecheck,
     rawProbeStatus,
     ipshubProbeStatus,
+    rawCurlExitCode,
+    ipshubCurlExitCode,
+    rawProbeErrorCode,
+    ipshubProbeErrorCode,
+    rawSingBoxOutput,
+    ipshubSingBoxOutput,
   } = input;
 
   // Loopback/reserved address — subscription metadata node, not a real proxy
@@ -69,33 +86,59 @@ export function diagnoseNode(input: DiagnosisInput): DiagnosisResult {
     };
   }
   if (rawProbeStatus === 'failed' && ipshubProbeStatus === 'failed') {
-    // If TCP succeeds but both sing-box probes fail, the problem is at the protocol
-    // handshake layer — the provider node itself is unavailable, not a conversion issue.
-    if (tcpOk === true) {
+    if (rawProbeErrorCode === 'SING_BOX_PROCESS_EXITED' || ipshubProbeErrorCode === 'SING_BOX_PROCESS_EXITED') {
       return {
-        code: 'PROVIDER_NODE_UNAVAILABLE',
-        explanation: 'TCP reachable, but both raw and IPSHub sing-box probes failed. The provider node is likely down or experiencing a protocol-level outage.',
+        code: 'SING_BOX_PROCESS_EXITED',
+        explanation: 'sing-box exited before the local inbound was ready or before curl could probe through it. Inspect sing-box stdout/stderr and the generated config in the debug package.',
         criticalDiffs,
       };
     }
+
+    if (rawProbeErrorCode === 'SING_BOX_INBOUND_NOT_READY' && ipshubProbeErrorCode === 'SING_BOX_INBOUND_NOT_READY') {
+      return {
+        code: 'SING_BOX_INBOUND_NOT_READY',
+        explanation: 'sing-box started but the local inbound port did not become ready within 3000ms. Inspect the port readiness check, sing-box stdout/stderr, and generated config in the debug package.',
+        criticalDiffs,
+      };
+    }
+
+    if (rawCurlExitCode === 97 && ipshubCurlExitCode === 97) {
+      return {
+        code: 'CURL_PROXY_HANDSHAKE_FAILED',
+        explanation: 'curl failed to handshake with the local sing-box proxy. This can be caused by a proxy protocol mismatch, an inbound that was not fully ready, incorrect curl proxy arguments, or the sing-box outbound refusing the request.',
+        criticalDiffs,
+      };
+    }
+
+    if (
+      rawCurlExitCode !== 97 &&
+      ipshubCurlExitCode !== 97 &&
+      hasHysteria2OutboundFailure(rawSingBoxOutput, ipshubSingBoxOutput)
+    ) {
+      return {
+        code: 'SING_BOX_CONFIRMED_FAILING',
+        explanation: 'sing-box reported Hysteria2 outbound handshake/dial/timeout failures for both raw and IPSHub configs. The node appears unreachable at the proxy protocol layer.',
+        criticalDiffs,
+      };
+    }
+
     return {
-      code: 'SING_BOX_CONFIRMED_FAILING',
-      explanation: 'Sing-box confirmed the node is unreachable for both raw and IPSHub configs.',
+      code: 'UNKNOWN_NEEDS_MANUAL_REVIEW',
+      explanation: 'Both raw and IPSHub sing-box probes failed, but there is not enough outbound-level sing-box evidence to blame the provider node. Inspect curl and sing-box logs in the debug package.',
       criticalDiffs,
     };
   }
   if (rawProbeStatus === 'ok' && ipshubProbeStatus === 'failed') {
-    if (criticalDiffs.length > 0) {
-      return {
-        code: 'LIKELY_IPSHUB_CONVERSION_ISSUE',
-        explanation: 'Sing-box connected with raw config but failed with IPSHub config, and critical config differences were detected. A conversion issue is highly likely.',
-        criticalDiffs,
-      };
-    }
-    // Configs are identical but probes diverged — not a conversion issue.
     return {
-      code: 'SING_BOX_PROBE_INCONSISTENCY',
-      explanation: 'Sing-box succeeded with raw config but failed with IPSHub config, yet no config differences were found. This is likely a transient node failure or flaky network condition rather than a conversion bug.',
+      code: 'IPSHUB_CONFIG_CONVERSION_FAILED',
+      explanation: 'sing-box connected with the raw provider config but failed with the IPSHub config. IPSHub likely changed or generated a config field incorrectly.',
+      criticalDiffs,
+    };
+  }
+  if (rawProbeStatus === 'failed' && ipshubProbeStatus === 'ok') {
+    return {
+      code: 'RAW_CONFIG_INVALID_BUT_IPSHUB_FIXED',
+      explanation: 'sing-box failed with the raw provider config but succeeded with the IPSHub config. IPSHub appears to have normalized or repaired an invalid raw config.',
       criticalDiffs,
     };
   }
@@ -159,8 +202,21 @@ export const DIAGNOSIS_LABELS: Record<DiagnosisCode, string> = {
   LIKELY_IPSHUB_RUNTIME_NETWORK_ISSUE: 'IPSHub Runtime Network Issue',
   SING_BOX_CONFIRMED_WORKING: 'Sing-Box: Confirmed Working',
   SING_BOX_CONFIRMED_FAILING: 'Sing-Box: Confirmed Failing',
+  SING_BOX_PROCESS_EXITED: 'Sing-Box Process Exited',
+  SING_BOX_INBOUND_NOT_READY: 'Sing-Box Inbound Not Ready',
+  CURL_PROXY_HANDSHAKE_FAILED: 'curl Proxy Handshake Failed',
+  IPSHUB_CONFIG_CONVERSION_FAILED: 'IPSHub Config Conversion Failed',
+  RAW_CONFIG_INVALID_BUT_IPSHUB_FIXED: 'Raw Config Invalid, IPSHub Fixed',
   SING_BOX_PROBE_INCONSISTENCY: 'Sing-Box: Probe Inconsistency (Transient)',
   PROVIDER_NODE_UNAVAILABLE: 'Provider Node Unavailable',
   INFO_NODE_NOT_TESTABLE: 'Subscription Info Node (Not Testable)',
   UNKNOWN_NEEDS_MANUAL_REVIEW: 'Unknown – Manual Review Needed',
 };
+
+function hasHysteria2OutboundFailure(...logs: Array<string | null | undefined>): boolean {
+  return logs.some((log) => {
+    const text = log?.toLowerCase() ?? '';
+    return text.includes('hysteria2') &&
+      (text.includes('handshake') || text.includes('dial') || text.includes('timeout'));
+  });
+}
